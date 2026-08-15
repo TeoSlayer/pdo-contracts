@@ -31,6 +31,7 @@
 
 #include "contract/base.h"
 #include "identity/identity.h"
+#include "identity/common/Credential.h"
 #include "identity/common/SigningContext.h"
 #include "identity/common/SigningContextManager.h"
 
@@ -38,6 +39,43 @@ static KeyValueStore identity_metadata_store("key_store");
 static KeyValueStore signing_context_store("signing_context");
 
 static const std::string md_description("description");
+static const std::string md_vc_store("vc_store");
+static const std::string initial_holder_path("__HOLDER__");
+
+// -----------------------------------------------------------------
+// VC STORE HELPERS
+// -----------------------------------------------------------------
+static bool load_vc_map(ww::value::Object& vc_map)
+{
+    std::string str;
+    ERROR_IF_NOT(identity_metadata_store.get(md_vc_store, str),
+                 "unexpected error, failed to fetch vc store");
+    ERROR_IF_NOT(vc_map.deserialize(str.c_str()),
+                 "unexpected error, failed to deserialize vc store");
+    return true;
+}
+
+static bool save_vc_map(ww::value::Object& vc_map)
+{
+    std::string str;
+    ERROR_IF_NOT(vc_map.serialize(str),
+                 "unexpected error, failed to serialize vc store");
+    ERROR_IF_NOT(identity_metadata_store.set(md_vc_store, str),
+                 "unexpected error, failed to save vc store");
+    return true;
+}
+
+static bool store_vc(const std::string& credential_type, ww::value::Object& vc_object)
+{
+    ww::value::Object vc_map;
+    ERROR_IF_NOT(load_vc_map(vc_map),
+                 "unexpected error, failed to load vc map");
+    ERROR_IF_NOT(vc_map.set_value(credential_type.c_str(), vc_object),
+                 "unexpected error, failed to update vc map");
+    ERROR_IF_NOT(save_vc_map(vc_map),
+                 "unexpected error, failed to save vc map");
+    return true;
+}
 
 // -----------------------------------------------------------------
 // FUNCTION: get_context_manager
@@ -99,8 +137,17 @@ bool ww::identity::identity::initialize_contract(const Environment& env)
     if (! manager.initialize())
         return false;
 
+    // ---------- prime the holder signing context ----------
+    // extensible so that per-originator sub-paths can be derived at get_vp time
+    std::vector<std::string> holder_path = {initial_holder_path};
+    if (! manager.add_context(true, "holder signing context", holder_path))
+        return false;
+
     // ---------- other metadata ----------
     if (! identity_metadata_store.set(md_description, "identity object"))
+        return false;
+
+    if (! identity_metadata_store.set(md_vc_store, "{}"))
         return false;
 
     return true;
@@ -458,4 +505,160 @@ bool ww::identity::identity::get_extended_verifying_key(const Message& msg, cons
                    "unexpected error, failed to set chain code");
 
     return rsp.value(result, false);
+}
+
+// -----------------------------------------------------------------
+// METHOD: add_vc
+//   Store a verifiable credential in the identity's VC store,
+//   indexed by the first element of its type list.
+//
+// JSON PARAMETERS:
+//   IDENTITY_ADD_VC_PARAM_SCHEMA
+// RETURNS:
+//   true on success
+// -----------------------------------------------------------------
+bool ww::identity::identity::add_vc(const Message& msg, const Environment& env, Response& rsp)
+{
+    // TODO: for now, allow any person to add a VC to any wallet, for an easier UX.
+    // ASSERT_SENDER_IS_OWNER(env, rsp);
+    ASSERT_INITIALIZED(rsp);
+
+    ASSERT_SUCCESS(rsp, msg.validate_schema(IDENTITY_ADD_VC_PARAM_SCHEMA),
+                   "invalid request, missing required parameters");
+
+    ww::value::Object vc_object;
+    ASSERT_SUCCESS(rsp, msg.get_value("credential", vc_object),
+                   "invalid request, missing credential");
+
+    ww::identity::VerifiableCredential vc;
+    ASSERT_SUCCESS(rsp, vc.deserialize(vc_object),
+                   "invalid request, ill-formed verifiable credential");
+
+    ASSERT_SUCCESS(rsp, !vc.credential_.type_.empty(),
+                   "invalid request, credential type list is empty");
+
+    const std::string credential_type = vc.credential_.type_[0];
+
+    ww::value::Object serialized_vc;
+    ASSERT_SUCCESS(rsp, vc.serialize(serialized_vc),
+                   "unexpected error, failed to serialize credential");
+
+    ASSERT_SUCCESS(rsp, store_vc(credential_type, serialized_vc),
+                   "unexpected error, failed to store credential");
+
+    return rsp.success(true);
+}
+
+// -----------------------------------------------------------------
+// METHOD: get_vc_list
+//   Return all stored verifiable credentials as a dictionary mapping
+//   credential type to the VC object.
+//
+// JSON PARAMETERS:
+//   none
+// RETURNS:
+//   object mapping credential_type -> VC object
+// -----------------------------------------------------------------
+bool ww::identity::identity::get_vc_list(const Message& msg, const Environment& env, Response& rsp)
+{
+    ASSERT_SENDER_IS_OWNER(env, rsp);
+    ASSERT_INITIALIZED(rsp);
+
+    ww::value::Object vc_map;
+    ASSERT_SUCCESS(rsp, load_vc_map(vc_map),
+                   "unexpected error, failed to load vc store");
+
+    return rsp.value(vc_map, false);
+}
+
+// -----------------------------------------------------------------
+// METHOD: get_vp
+//   Retrieve stored verifiable credentials for the given types and
+//   wrap them in a signed VerifiablePresentation.
+//
+// JSON PARAMETERS:
+//   IDENTITY_GET_VP_PARAM_SCHEMA
+// RETURNS:
+//   VERIFIABLE_PRESENTATION_SCHEMA
+// -----------------------------------------------------------------
+bool ww::identity::identity::get_vp(const Message& msg, const Environment& env, Response& rsp)
+{
+    ASSERT_SENDER_IS_OWNER(env, rsp);
+    ASSERT_INITIALIZED(rsp);
+
+    ASSERT_SUCCESS(rsp, msg.validate_schema(IDENTITY_GET_VP_PARAM_SCHEMA),
+                   "invalid request, missing required parameters");
+
+    ww::value::Array types_array;
+    ASSERT_SUCCESS(rsp, msg.get_value("credential_types", types_array),
+                   "invalid request, missing credential_types");
+
+    // collect the stored VCs
+    ww::value::Object vc_map;
+    ASSERT_SUCCESS(rsp, load_vc_map(vc_map),
+                   "unexpected error, failed to load vc store");
+
+    ww::value::Array vc_list;
+    const size_t count = types_array.get_count();
+    for (size_t i = 0; i < count; i++)
+    {
+        const std::string credential_type(types_array.get_string(i));
+
+        ww::value::Object vc_object;
+        ASSERT_SUCCESS(rsp, vc_map.get_value(credential_type.c_str(), vc_object),
+                       ("invalid request, no credential stored for type: " + credential_type).c_str());
+
+        ASSERT_SUCCESS(rsp, vc_list.append_value(vc_object),
+                       "unexpected error, failed to build VC list");
+    }
+
+    // build the Presentation object
+    ww::identity::Identity holder;
+    holder.id_ = env.contract_id_;
+
+    ww::value::Value serialized_holder;
+    ASSERT_SUCCESS(rsp, holder.serialize(serialized_holder),
+                   "unexpected error, failed to serialize holder identity");
+
+    ww::value::Object presentation_obj;
+    ASSERT_SUCCESS(rsp, presentation_obj.set_value("holder", serialized_holder),
+                   "unexpected error, failed to set holder in presentation");
+    ASSERT_SUCCESS(rsp, presentation_obj.set_value("verifiableCredential", vc_list),
+                   "unexpected error, failed to set credentials in presentation");
+
+    // derive a per-originator signing context from the __HOLDER__ root
+    ww::types::ByteArray originator_bytes(env.originator_id_.begin(), env.originator_id_.end());
+    ww::types::ByteArray originator_hash;
+    ASSERT_SUCCESS(rsp, ww::crypto::hash::sha256_hash(originator_bytes, originator_hash),
+                   "unexpected error, failed to hash originator");
+
+    std::string encoded_originator;
+    ASSERT_SUCCESS(rsp, ww::crypto::b64_encode(originator_hash, encoded_originator),
+                   "unexpected error, failed to encode originator");
+
+    // TODO: this doesn't make sense; the originator is always the contract owner.
+    // perhaps later if we try to mimic the OID4VP, the context path will include the
+    // releying party ID
+    std::vector<std::string> context_path = {initial_holder_path, encoded_originator};
+    ww::identity::SigningContext context;
+    std::vector<std::string> extended_path;
+
+    ww::identity::SigningContextManager manager = ww::identity::identity::get_context_manager();
+    ASSERT_SUCCESS(rsp, manager.find_context(context_path, extended_path, context),
+                   "unexpected error, failed to locate holder signing context");
+
+    context.set_context_path(extended_path);
+
+    const ww::identity::IdentityKey identity(env.contract_id_, context_path);
+
+    // build and sign the VP
+    ww::identity::VerifiablePresentation vp;
+    ASSERT_SUCCESS(rsp, vp.build(presentation_obj, identity, context),
+                   "unexpected error, failed to build verifiable presentation");
+
+    ww::value::Object serialized_vp;
+    ASSERT_SUCCESS(rsp, vp.serialize(serialized_vp),
+                   "unexpected error, failed to serialize verifiable presentation");
+
+    return rsp.value(serialized_vp, false);
 }

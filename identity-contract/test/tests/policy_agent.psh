@@ -138,6 +138,41 @@ if -o ${_error_code_} 0
    exit -v ${_error_code_}
 fi
 
+## =================================================================
+echo ${HEADER} create an identity contract to hold credentials ${ENDC}
+## =================================================================
+set -s _id_contract_ -v /tmp/identity_pa.pdo
+
+contract create -c identity_identity --source ${contracts}/_identity_identity -f ${_id_contract_}
+if -o ${_error_code_} 0
+   echo ${ERROR} [Error ${_error_code_}] failed to create the identity contract; ${_error_message_} ${ENDC}
+   exit -v ${_error_code_}
+fi
+
+identity_wallet_contract initialize -w -f ${_id_contract_} \
+    --description "test identity for policy agent"
+if -o ${_error_code_} 0
+   echo ${ERROR} [Error ${_error_code_}] failed to initialize the identity contract; ${_error_message_} ${ENDC}
+   exit -v ${_error_code_}
+fi
+
+echo ${INFO} store the signed credential in the identity contract ${ENDC}
+identity_wallet_contract add_vc -w -f ${_id_contract_} --credential ${_signed_credential1_}
+if -o ${_error_code_} 0
+   echo ${ERROR} [Error ${_error_code_}] failed to store credential; ${_error_message_} ${ENDC}
+   exit -v ${_error_code_}
+fi
+
+echo ${INFO} retrieve a verifiable presentation from the identity contract ${ENDC}
+identity_wallet_contract get_vp -f ${_id_contract_} -t dummy -s _vp_
+if -o ${_error_code_} 0
+   echo ${ERROR} [Error ${_error_code_}] failed to get verifiable presentation; ${_error_message_} ${ENDC}
+   exit -v ${_error_code_}
+fi
+
+echo ${INFO} Verifiable Presentation: ${ENDC}
+echo ${_vp_}
+
 echo ${INFO} issue the policy credential ${ENDC}
 policy_agent_contract issue_policy_credential -f ${_pa_contract_} \
     -c ${_signed_credential1_} -s _issued_credential_

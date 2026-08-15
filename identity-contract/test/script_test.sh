@@ -148,6 +148,9 @@ rm -f ${F_CONTEXT_FILE}
 try pdo-context load ${OPTS} --import-file ${F_CONTEXT_TEMPLATES}/identity.toml \
     --bind identity idtest --bind user user1
 
+try pdo-context load ${OPTS} --import-file ${F_CONTEXT_TEMPLATES}/identity.toml \
+    --bind identity idtest2 --bind user user1
+
 try pdo-context load ${OPTS} --import-file ${F_CONTEXT_TEMPLATES}/signature_authority.toml \
     --bind identity satest --bind user user2
 
@@ -162,9 +165,11 @@ try pdo-context load ${OPTS} --import-file ${F_CONTEXT_TEMPLATES}/committee.toml
 # -----------------------------------------------------------------
 
 # =================================================================
-yell create an identity contract
+yell create a identity contracts
 try id_wallet create ${OPTS} --contract identity.idtest.wallet   \
     -d 'idtest identity'
+try id_wallet create ${OPTS} --contract identity.idtest2.wallet   \
+    -d 'idtest2 identity'
 
 yell register keys and retrieve them
 try id_wallet register ${OPTS} --contract identity.idtest.wallet \
@@ -241,6 +246,13 @@ say $(< ${TEST_ROOT}/sa_credential2.json)
 
 try id_signature_authority verify_credential ${OPTS} --contract identity.satest.signature_authority \
     --signed-credential ${TEST_ROOT}/sa_credential2.json
+
+yell add VCs to the identity contracts
+try id_wallet add_vc ${OPTS} --contract identity.idtest.wallet \
+    --credential ${TEST_ROOT}/sa_credential1.json
+
+try id_wallet add_vc ${OPTS} --contract identity.idtest2.wallet \
+    --credential ${TEST_ROOT}/sa_credential2.json
 
 # =================================================================
 yell create a policy agent

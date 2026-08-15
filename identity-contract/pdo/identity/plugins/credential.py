@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     'cmd_extract_credential',
+    'cmd_extract_vp_credentials',
     'do_credential',
     'load_commands',
 ]
@@ -65,10 +66,53 @@ class cmd_extract_credential(pscript.script_command_base) :
         return deserialized_credential
 
 ## -----------------------------------------------------------------
+## -----------------------------------------------------------------
+class cmd_extract_vp_credentials(pscript.script_command_base) :
+    name = "extract_vp_credentials"
+    help = "extract the list of credentials from the VCs in a verifiable presentation"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        subparser.add_argument(
+            '--vp',
+            help='The name of the file where the verifiable presentation is stored',
+            type=str,
+            required=True)
+
+        subparser.add_argument(
+            '--credentials',
+            help='The name of the file where the extracted credentials will be saved (JSON array)',
+            type=str)
+
+    @classmethod
+    def invoke(cls, state, bindings, vp, credentials=None, **kwargs) :
+        with open(vp, 'r') as fp :
+            vp_data = json.load(fp)
+
+        presentation_json = pcrypto.byte_array_to_string(
+            pcrypto.base64_to_byte_array(vp_data['serializedPresentation']))
+        presentation = json.loads(presentation_json)
+
+        result = []
+        for vc in presentation['verifiableCredential'] :
+            credential_json = pcrypto.byte_array_to_string(
+                pcrypto.base64_to_byte_array(vc['serializedCredential']))
+            result.append(json.loads(credential_json))
+
+        if credentials :
+            with open(credentials, 'w') as fp :
+                json.dump(result, fp, indent=4)
+        else :
+            cls.display(json.dumps(result, indent=4))
+
+        return result
+
+## -----------------------------------------------------------------
 ## Create the generic, shell independent version of the aggregate command
 ## -----------------------------------------------------------------
 __subcommands__ = [
     cmd_extract_credential,
+    cmd_extract_vp_credentials,
 ]
 do_credential = pscript.create_shell_command('credential', __subcommands__)
 

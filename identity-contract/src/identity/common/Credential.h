@@ -361,6 +361,11 @@ namespace identity
         ww::identity::Presentation presentation_;
         ww::identity::Proof proof_;
 
+        const std::string get_serialized_presentation(void) const
+        {
+            return serializedPresentation_;
+        }
+
         static bool verify_schema(const ww::value::Object& deserialized_object)
         {
             return ww::exchange::SerializeableObject::verify_schema_actual(
@@ -369,6 +374,11 @@ namespace identity
 
         bool deserialize(const ww::value::Object& verifiable_credential);
         bool serialize(ww::value::Value& serialized_verifiable_credential) const;
+
+        bool build(
+            const ww::value::Object& presentation,
+            const ww::identity::IdentityKey& identity,
+            const ww::identity::BaseSigningContext& signing_context);
     };
 }
 }

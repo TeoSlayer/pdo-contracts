@@ -63,5 +63,9 @@ contract_method_reference_t contract_method_dispatch_table[] = {
     CONTRACT_METHOD2(sign, ww::identity::identity::sign),
     CONTRACT_METHOD2(verify, ww::identity::identity::verify),
 
+    CONTRACT_METHOD2(add_vc, ww::identity::identity::add_vc),
+    CONTRACT_METHOD2(get_vc_list, ww::identity::identity::get_vc_list),
+    CONTRACT_METHOD2(get_vp, ww::identity::identity::get_vp),
+
     { NULL, NULL }
 };

@@ -624,5 +624,41 @@ bool ww::identity::VerifiablePresentation::serialize(ww::value::Value& serialize
     if (! serializer.set_value("proof", serialized_proof))
         return false;
 
+    serialized_object.set(serializer);
+    return true;
+}
+
+// -----------------------------------------------------------------
+// -----------------------------------------------------------------
+bool ww::identity::VerifiablePresentation::build(
+    const ww::value::Object& presentation_object,
+    const ww::identity::IdentityKey& identity,
+    const ww::identity::BaseSigningContext& signing_context)
+{
+    ERROR_IF_NOT(presentation_.deserialize(presentation_object),
+                 "unable to deserialize presentation for signing");
+
+    std::string serialized_presentation;
+    ERROR_IF_NOT(presentation_.serialize_string(serialized_presentation),
+                 "unable to serialize presentation for signing");
+
+    ww::types::ByteArray serialized_ba(serialized_presentation.begin(), serialized_presentation.end());
+    if (! ww::crypto::b64_encode(serialized_ba, serializedPresentation_))
+        return false;
+
+    ww::types::ByteArray signature_ba;
+    ww::types::ByteArray message_ba(serializedPresentation_.begin(), serializedPresentation_.end());
+    ERROR_IF_NOT(signing_context.sign_message(message_ba, signature_ba),
+                 "invalid request, unable to sign presentation");
+
+    std::string b64_signature;
+    if (! ww::crypto::b64_encode(signature_ba, b64_signature))
+        return false;
+
+    proof_.type_ = "ecdsa_secp384r1";
+    proof_.verificationMethod_ = identity;
+    proof_.proofValue_ = b64_signature;
+    proof_.proofPurpose_ = "assertion";
+
     return true;
 }
