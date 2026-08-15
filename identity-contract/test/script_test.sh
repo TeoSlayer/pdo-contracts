@@ -261,7 +261,7 @@ try id_policy_agent create ${OPTS} --contract identity.patest.policy_agent \
 
 yell register issuer with the policy agent
 try id_policy_agent register ${OPTS} --contract identity.patest.policy_agent \
-    --issuer identity.satest.signature_authority --path satest ext1
+    --issuer identity.satest.signature_authority --path satest ext1 --credential-types dummy
 
 yell issue a simple credential
 try id_policy_agent issue_credential ${OPTS} --contract identity.patest.policy_agent \

@@ -132,7 +132,8 @@ fi
 
 echo ${INFO} register the signature authority as a trusted endpoint ${ENDC}
 policy_agent_contract register_trusted_issuer -w -f ${_pa_contract_} \
-    --chaincode "${_sa_chain_code_}" --key "${_sa_public_key_}" --issuer "${_sa_contract_id_}" -p "credential"
+    --chaincode "${_sa_chain_code_}" --key "${_sa_public_key_}" --issuer "${_sa_contract_id_}" -p "credential" \
+    --credential-types "dummy"
 if -o ${_error_code_} 0
    echo ${ERROR} [Error ${_error_code_}] failed to register the issuer; ${_error_message_} ${ENDC}
    exit -v ${_error_code_}

@@ -104,6 +104,24 @@ bool ww::identity::VerifyingContext::initialize(
 }
 
 // -----------------------------------------------------------------
+// is_prefix_of
+//
+// True when prefix_path_ is a prefix of candidate. Empty prefix_path_
+// matches any candidate. Pure predicate; no logging.
+// -----------------------------------------------------------------
+bool ww::identity::VerifyingContext::is_prefix_of(const std::vector<std::string>& candidate) const
+{
+    if (candidate.size() < prefix_path_.size())
+        return false;
+
+    for (size_t i = 0; i < prefix_path_.size(); i++)
+        if (prefix_path_[i] != candidate[i])
+            return false;
+
+    return true;
+}
+
+// -----------------------------------------------------------------
 // extend_context_path
 //
 // Verify that the context path starts with the prefix path. If it
@@ -111,19 +129,11 @@ bool ww::identity::VerifyingContext::initialize(
 // -----------------------------------------------------------------
 bool ww::identity::VerifyingContext::extend_context_path(const std::vector<std::string>& context_path)
 {
-    if (context_path.size() < prefix_path_.size())
-        return false;
+    ERROR_IF_NOT(is_prefix_of(context_path), "Context path does not match prefix path");
 
-    std::vector<std::string>::const_iterator prefix_element = prefix_path_.begin();
-    std::vector<std::string>::const_iterator context_element = context_path.begin();
-
-    // Verify that the context path starts with the prefix path
-    for ( ; prefix_element < prefix_path_.end(); prefix_element++, context_element++)
-        ERROR_IF((*prefix_element) != (*context_element), "Context path does not match prefix path");
-
-    // Extend the context path with the remaining elements
-    for ( ; context_element < context_path.end(); context_element++)
-        context_path_.push_back(*context_element);
+    // Append the elements after the prefix to the accumulated context_path_
+    for (size_t i = prefix_path_.size(); i < context_path.size(); i++)
+        context_path_.push_back(context_path[i]);
 
     return true;
 }

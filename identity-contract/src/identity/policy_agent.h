@@ -16,6 +16,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "Environment.h"
 #include "Message.h"
@@ -28,6 +29,7 @@
 #define POLICY_AGENT_REGISTER_ISSUER_PARAM_SCHEMA       \
     "{"                                                 \
         SCHEMA_KW(issuer_identity, "") ","              \
+        SCHEMA_KW(credential_types, [ "" ]) ","         \
         SCHEMA_KW(context_path, [ "" ]) ","             \
         SCHEMA_KW(public_key, "") ","                   \
         SCHEMA_KW(chain_code, "")                       \
@@ -54,9 +56,11 @@ namespace policy_agent
     bool register_trusted_issuer(const Message& msg, const Environment& env, Response& rsp);
 
     // Functions to extend the functionality of the policy agent
-    bool save_trusted_issuer(const std::string& issuer_id, const ww::identity::VerifyingContext& vc);
-    bool fetch_trusted_issuer(const std::string& issuer_id, ww::identity::VerifyingContext& vc);
-    bool verify_credential(const ww::value::Object& vc_object, ww::identity::VerifiableCredential& vc);
+    bool initialize_trusted_issuers();
+    bool get_trusted_issuers_map(ww::value::Object& trusted_issuers);
+    bool save_trusted_issuer(const std::string& issuer_id, const ww::identity::VerifyingContext& vc, const ww::value::Array& credential_types);
+    bool fetch_trusted_issuer(const std::string& issuer_id, const std::string& credential_type, const std::vector<std::string>& credential_path, ww::identity::VerifyingContext& out_vc);
+    bool verify_credential(const ww::value::Object& vc_object, ww::identity::VerifiableCredential& vc, const std::string& credential_type);
     bool issue_credential(
         const std::string& originator,
         const std::string& contract_id,

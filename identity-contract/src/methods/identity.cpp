@@ -474,9 +474,11 @@ bool ww::identity::identity::get_extended_verifying_key(const Message& msg, cons
     ASSERT_SUCCESS(rsp, msg.validate_schema(IDENTITY_GET_VERIFYING_KEY_PARAM_SCHEMA),
                    "invalid request, missing required parameters");
 
-    // Get the context path parameter
+    // Get the context path parameter; an empty path is valid here and refers
+    // to the root context (register_trusted_issuer accepts the same empty
+    // path to mean "trust this issuer's root key for any context").
     std::vector<std::string> context_path;
-    ASSERT_SUCCESS(rsp, get_context_path(msg, context_path),
+    ASSERT_SUCCESS(rsp, get_context_path(msg, context_path, 0),
                    "invalid request, ill-formed context path");
 
     // Find the signing context referenced by the context path

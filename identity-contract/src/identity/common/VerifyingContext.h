@@ -53,6 +53,11 @@ namespace identity
 
         bool extend_context_path(const std::vector<std::string>& context_path);
 
+        // True when prefix_path_ is a prefix of candidate (empty prefix
+        // matches any candidate). Pure predicate — no side effects, no
+        // error logging.
+        bool is_prefix_of(const std::vector<std::string>& candidate) const;
+
         bool verify_signature(
             const ww::types::ByteArray& message,
             const ww::types::ByteArray& signature) const override;

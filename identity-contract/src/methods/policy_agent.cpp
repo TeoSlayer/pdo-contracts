@@ -35,58 +35,186 @@
 #include "identity/common/Credential.h"
 #include "identity/common/VerifyingContext.h"
 
-static KeyValueStore trusted_issuer_store("issuer_store");
 static KeyValueStore policy_metadata_store("policy_metadata_store");
 
 const std::string md_issuer_path("issuer_path");
+const std::string md_trusted_issuers("trusted_issuers");
 const std::string initial_issuer_path("__ISSUER__");
 
 // -----------------------------------------------------------------
+// UTILITY: load the trusted_issuers map from policy_metadata_store.
+// Map shape: { <issuer_id>: [ { verifying_context, credential_types }, ... ] }
+// Exposed (see policy_agent.h) so inheriting contracts -- e.g. rego_policy_agent
+// -- can read the same map instead of re-fetching the store themselves.
+// -----------------------------------------------------------------
+bool ww::identity::policy_agent::get_trusted_issuers_map(ww::value::Object &trusted_issuers)
+{
+    std::string str;
+    ERROR_IF_NOT(policy_metadata_store.get(md_trusted_issuers, str),
+                 "unexpected error, failed to fetch trusted issuers map");
+    ERROR_IF_NOT(trusted_issuers.deserialize(str.c_str()),
+                 "unexpected error, failed to deserialize trusted issuers map");
+    return true;
+}
+
+// -----------------------------------------------------------------
+// UTILITY: persist the trusted_issuers map back to policy_metadata_store
+// -----------------------------------------------------------------
+static bool save_trusted_issuers_map(const ww::value::Object &trusted_issuers)
+{
+    std::string str;
+    ERROR_IF_NOT(trusted_issuers.serialize(str),
+                 "unexpected error, failed to serialize trusted issuers map");
+    ERROR_IF_NOT(policy_metadata_store.set(md_trusted_issuers, str),
+                 "unexpected error, failed to save trusted issuers map");
+    return true;
+}
+
+// -----------------------------------------------------------------
+// UTILITY: check whether a string is present in a ww::value::Array
+// -----------------------------------------------------------------
+static bool array_contains_string(const ww::value::Array &array, const std::string &value)
+{
+    const size_t count = array.get_count();
+    for (size_t i = 0; i < count; i++)
+    {
+        const char *t = array.get_string(i);
+        if (t != nullptr && std::string(t) == value)
+            return true;
+    }
+    return false;
+}
+
+// -----------------------------------------------------------------
+// FUNCTION: initialize_trusted_issuers
+// -----------------------------------------------------------------
+bool ww::identity::policy_agent::initialize_trusted_issuers()
+{
+    // empty map: { } — issuer_id keys will be added by register_trusted_issuer
+    ERROR_IF_NOT(policy_metadata_store.set(md_trusted_issuers, "{}"),
+                 "unexpected error, failed to initialize empty trusted issuers map");
+    return true;
+}
+
+// -----------------------------------------------------------------
 // FUNCTION: save_trusted_issuer
+//   Append a new (verifying_context, credential_types) record to the
+//   list of records stored under issuer_id. Repeated calls accumulate
+//   records; multiple registrations of the same prefix path are not
+//   detected here (caller decides), and first-match wins at lookup.
 // -----------------------------------------------------------------
 bool ww::identity::policy_agent::save_trusted_issuer(
-    const std::string& issuer_id,
-    const ww::identity::VerifyingContext& vc)
+    const std::string &issuer_id,
+    const ww::identity::VerifyingContext &vc,
+    const ww::value::Array &credential_types)
 {
-    // ---------- save the trusted issuer ----------
-    ww::value::Value trusted_issuer;
-    ERROR_IF_NOT(vc.serialize(trusted_issuer),
-                 "unexpected error, failed to serialize trusted issuer");
+    ww::value::Object trusted_issuers;
+    ERROR_IF_NOT(get_trusted_issuers_map(trusted_issuers),
+                 "unexpected error, failed to load trusted issuers map");
 
-    std::string trusted_issuer_str;
-    ERROR_IF_NOT(trusted_issuer.serialize(trusted_issuer_str),
-                 "unexpected error, failed to serialize trusted issuer");
+    // serialize the verifying context so it can be stored as an Object inside the record
+    ww::value::Value vctx_value;
+    ERROR_IF_NOT(vc.serialize(vctx_value),
+                 "unexpected error, failed to serialize verifying context");
 
-    return trusted_issuer_store.set(issuer_id, trusted_issuer_str);
+    // build the new record { verifying_context, credential_types }
+    ww::value::Object record;
+    ERROR_IF_NOT(record.set_value("verifying_context", vctx_value),
+                 "unexpected error, failed to set verifying_context on record");
+    ERROR_IF_NOT(record.set_value("credential_types", credential_types),
+                 "unexpected error, failed to set credential_types on record");
+
+    // load the existing record array for this issuer (empty if absent), append, save back
+    ww::value::Array records;
+    trusted_issuers.get_value(issuer_id.c_str(), records); // failure leaves records as a valid empty array
+    ERROR_IF_NOT(records.append_value(record),
+                 "unexpected error, failed to append record");
+
+    ERROR_IF_NOT(trusted_issuers.set_value(issuer_id.c_str(), records),
+                 "unexpected error, failed to update trusted issuers map");
+
+    return save_trusted_issuers_map(trusted_issuers);
 }
 
 // -----------------------------------------------------------------
 // FUNCTION: fetch_trusted_issuer
+//   For a given issuer_id, walk its stored records and return the first
+//   record whose verifying_context.prefix_path is a prefix of
+//   credential_path AND whose credential_types list contains credential_type.
+//   On match, out_vc is populated with the verifying context.
 // -----------------------------------------------------------------
 bool ww::identity::policy_agent::fetch_trusted_issuer(
-    const std::string& issuer_id,
-    ww::identity::VerifyingContext& vc)
+    const std::string &issuer_id,
+    const std::string &credential_type,
+    const std::vector<std::string> &credential_path,
+    ww::identity::VerifyingContext &out_vc)
 {
-    // ---------- fetch the trusted issuer ----------
-    std::string trusted_issuer_str;
-    ERROR_IF_NOT(trusted_issuer_store.get(issuer_id, trusted_issuer_str),
-                 "unexpected error, failed to fetch trusted issuer");
+    ww::value::Object trusted_issuers;
+    ERROR_IF_NOT(get_trusted_issuers_map(trusted_issuers),
+                 "unexpected error, failed to load trusted issuers map");
 
-    ww::value::Object trusted_issuer;
-    ERROR_IF_NOT(trusted_issuer.deserialize(trusted_issuer_str.c_str()),
-                 "unexpected error, failed to deserialize trusted issuer");
-    ERROR_IF_NOT(vc.deserialize(trusted_issuer),
-                 "unexpected error, failed to deserialize verifying context");
+    ww::value::Array records;
+    ERROR_IF_NOT(trusted_issuers.get_value(issuer_id.c_str(), records),
+                 "invalid request, unknown trusted issuer");
 
-    return true;
+    const size_t count = records.get_count();
+    for (size_t i = 0; i < count; i++)
+    {
+        ww::value::Object record;
+        if (!records.get_value(i, record))
+        {
+            CONTRACT_SAFE_LOG(3, "malformed trusted issuers store: record is not an object, skipping");
+            continue;
+        }
+
+        // filter by credential type first (cheap check)
+        ww::value::Array types;
+        if (!record.get_value("credential_types", types))
+        {
+            CONTRACT_SAFE_LOG(3, "malformed trusted issuers store: record missing credential_types, skipping");
+            continue;
+        }
+        if (!array_contains_string(types, credential_type))
+            continue;
+
+        // deserialize the verifying context, then ask it whether its
+        // prefix_path matches the credential's context_path
+        ww::value::Object vctx_object;
+        if (!record.get_value("verifying_context", vctx_object))
+        {
+            CONTRACT_SAFE_LOG(3, "malformed trusted issuers store: record missing verifying_context, skipping");
+            continue;
+        }
+
+        ww::identity::VerifyingContext candidate;
+        if (!candidate.deserialize(vctx_object))
+        {
+            CONTRACT_SAFE_LOG(3, "malformed trusted issuers store: failed to deserialize verifying_context, skipping");
+            continue;
+        }
+
+        if (!candidate.is_prefix_of(credential_path))
+            continue;
+
+        // first match wins — re-deserialize from the same wire-format
+        // object into the caller's out_vc (defensive against future
+        // additions to VerifyingContext that may not be copy-safe)
+        ERROR_IF_NOT(out_vc.deserialize(vctx_object),
+                     "unexpected error, failed to deserialize verifying context");
+        return true;
+    }
+
+    CONTRACT_SAFE_LOG(3, "no trusted context matches credential type and path for issuer");
+    return false;
 }
 
 // -----------------------------------------------------------------
 // FUNCTION: verify_credential
 // -----------------------------------------------------------------
 bool ww::identity::policy_agent::verify_credential(
-    const ww::value::Object& vc_object,
-    ww::identity::VerifiableCredential& vc)
+    const ww::value::Object &vc_object,
+    ww::identity::VerifiableCredential &vc,
+    const std::string &credential_type)
 {
     ERROR_IF_NOT(vc.deserialize(vc_object), "invalid request, ill-formed credential");
 
@@ -102,8 +230,12 @@ bool ww::identity::policy_agent::verify_credential(
                  "invalid request, ill-formed signature");
 
     ww::identity::VerifyingContext verifier;
-    ERROR_IF_NOT(fetch_trusted_issuer(vc.proof_.verificationMethod_.id_, verifier),
-                 "invalid request, unknown issuer");
+    ERROR_IF_NOT(fetch_trusted_issuer(
+                     vc.proof_.verificationMethod_.id_,
+                     credential_type,
+                     vc.proof_.verificationMethod_.context_path_,
+                     verifier),
+                 "invalid request, no trusted context matches the credential's verification method");
 
     ERROR_IF_NOT(verifier.extend_context_path(vc.proof_.verificationMethod_.context_path_),
                  "invalid request, ill-formed context path");
@@ -118,10 +250,10 @@ bool ww::identity::policy_agent::verify_credential(
 // FUNCTION: issue_credential
 // -----------------------------------------------------------------
 bool ww::identity::policy_agent::issue_credential(
-    const std::string& originator,
-    const std::string& contract_id,
-    const ww::identity::Credential& credential,
-    ww::identity::VerifiableCredential& vc)
+    const std::string &originator,
+    const std::string &contract_id,
+    const ww::identity::Credential &credential,
+    ww::identity::VerifiableCredential &vc)
 {
     // the context path that we are using is the path configured in the policy
     // agent (initially the initial_issuer_path) plus the hash of the originator's
@@ -139,7 +271,7 @@ bool ww::identity::policy_agent::issue_credential(
                  "unexpected error, failed to encode the originator");
 
     // setup the context path
-    std::vector<std::string> context_path = { initial_issuer_path, encoded_originator };
+    std::vector<std::string> context_path = {initial_issuer_path, encoded_originator};
     ww::identity::SigningContext context;
     std::vector<std::string> extended_path;
 
@@ -177,24 +309,28 @@ bool ww::identity::policy_agent::issue_credential(
 // RETURNS:
 //   true if successfully initialized
 // -----------------------------------------------------------------
-bool ww::identity::policy_agent::initialize_contract(const Environment& env)
+bool ww::identity::policy_agent::initialize_contract(const Environment &env)
 {
     // ---------- initialize the base contract ----------
-    if (! ww::identity::identity::initialize_contract(env))
+    if (!ww::identity::identity::initialize_contract(env))
         return false;
 
     // ----------initialize the trusted issuer ----------
     // the trusted issuer is the path to the root key used to
     // sign credentials that are generated by this policy agent
-    if (! policy_metadata_store.set(md_issuer_path, initial_issuer_path))
+    if (!policy_metadata_store.set(md_issuer_path, initial_issuer_path))
         return false;
 
-    std::vector<std::string> context_path = { initial_issuer_path };
+    std::vector<std::string> context_path = {initial_issuer_path};
     const std::string description("initial issuer path");
     const bool extensible = true;
 
     ww::identity::SigningContextManager manager = ww::identity::identity::get_context_manager();
-    if (! manager.add_context(extensible, description, context_path))
+    if (!manager.add_context(extensible, description, context_path))
+        return false;
+
+    // initialize an empty trusted-issuers map
+    if (!initialize_trusted_issuers())
         return false;
 
     return true;
@@ -202,16 +338,14 @@ bool ww::identity::policy_agent::initialize_contract(const Environment& env)
 
 // -----------------------------------------------------------------
 // METHOD: register_trusted_issuer
-//   Register the public key and chain code of a trusted issuer, note
-//   that for the moment this is implemented with the assumption that
-//   the invoker (the owner of the contract) is the only one who can
-//   register trusted issuers.  This could be expanded to allow for
-//   formal registration of endpoints including proof that a specific
-//   contract object exists.
+//   Register a (verifying_context, credential_types) record for a
+//   trusted issuer. Only the owner of the contract may invoke this.
 //
-//   Any duplicate registration for a given ID will, for the moment,
-//   fail. This is a simple policy that may be changed by others using
-//   this approach.
+//   Repeated calls for the same issuer_id append additional records;
+//   each record carries its own prefix_path and credential_types list.
+//   At verification time, the first record whose prefix_path is a
+//   prefix of the credential's context_path and whose credential_types
+//   list contains the requested type is selected.
 //
 // JSON PARAMETERS:
 //   POLICY_AGENT_REGISTER_ISSUER_PARAM_SCHEMA
@@ -219,7 +353,7 @@ bool ww::identity::policy_agent::initialize_contract(const Environment& env)
 // RETURNS:
 //   true if the registration succeeds
 // -----------------------------------------------------------------
-bool ww::identity::policy_agent::register_trusted_issuer(const Message& msg, const Environment& env, Response& rsp)
+bool ww::identity::policy_agent::register_trusted_issuer(const Message &msg, const Environment &env, Response &rsp)
 {
     ASSERT_SENDER_IS_OWNER(env, rsp);
     ASSERT_INITIALIZED(rsp);
@@ -230,6 +364,14 @@ bool ww::identity::policy_agent::register_trusted_issuer(const Message& msg, con
     const std::string issuer_identity(msg.get_string("issuer_identity"));
     const std::string public_key_str(msg.get_string("public_key"));
     const std::string chain_code_str(msg.get_string("chain_code"));
+
+    // credential_types is an array of credential type strings this issuer is trusted to issue;
+    // the schema already enforces array-of-string shape, so we only check non-emptiness here
+    ww::value::Array credential_types;
+    ASSERT_SUCCESS(rsp, msg.get_value("credential_types", credential_types),
+                   "invalid request, missing credential_types");
+    ASSERT_SUCCESS(rsp, credential_types.get_count() > 0,
+                   "invalid request, credential_types must not be empty");
 
     // Get and validate the path parameter. This is the path TO the
     // key relative to the contract object, any verification key from
@@ -244,7 +386,7 @@ bool ww::identity::policy_agent::register_trusted_issuer(const Message& msg, con
     ww::identity::VerifyingContext verifier;
     ASSERT_SUCCESS(rsp, verifier.initialize(prefix_path, public_key_str, chain_code_str),
                    "invalid request, invalid issuer public key/chain code");
-    ASSERT_SUCCESS(rsp, save_trusted_issuer(issuer_identity, verifier),
+    ASSERT_SUCCESS(rsp, save_trusted_issuer(issuer_identity, verifier, credential_types),
                    "unexpected error, failed to save issuer information");
 
     // ---------- RETURN ----------
