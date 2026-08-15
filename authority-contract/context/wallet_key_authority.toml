@@ -1,0 +1,8 @@
+# -----------------------------------------------------------------
+# identity ${identity}
+# -----------------------------------------------------------------
+[identity.${identity}.wallet_key_authority]
+identity = "${user}"
+module = "pdo.authority.plugins.wallet_key_authority"
+source = "${ContractFamily.Authority.wallet_key_authority.source}"
+description = "wallet key authority for ${identity}"

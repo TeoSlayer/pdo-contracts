@@ -1,0 +1,6 @@
+# -----------------------------------------------------------------
+# Authority family contract source
+# -----------------------------------------------------------------
+[ContractFamily.Authority]
+wallet_key_authority = { source = "${home}/contracts/authority/_authority_wallet_key_authority.b64" }
+external_key_authority = { source = "${home}/contracts/authority/_authority_external_key_authority.b64" }

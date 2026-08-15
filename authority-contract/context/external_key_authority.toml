@@ -1,0 +1,15 @@
+# -----------------------------------------------------------------
+# identity ${identity}
+# -----------------------------------------------------------------
+[identity.${identity}.wallet_key_authority]
+identity = "${user}"
+module = "pdo.authority.plugins.wallet_key_authority"
+source = "${ContractFamily.Authority.wallet_key_authority.source}"
+description = "wallet key authority for ${identity}"
+
+[identity.${identity}.external_key_authority]
+identity = "${user}"
+module = "pdo.authority.plugins.external_key_authority"
+source = "${ContractFamily.Authority.external_key_authority.source}"
+description = "external key authority for ${identity}"
+wallet_key_authority_context = "@{..wallet_key_authority}"
