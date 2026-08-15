@@ -37,6 +37,20 @@ LIST(APPEND ${CF_HANDLE}_SOURCES ${${CF_HANDLE}_COMMON_SOURCE})
 LIST(APPEND ${CF_HANDLE}_SOURCES ${${CF_HANDLE}_CRYPTO_SOURCE})
 LIST(APPEND ${CF_HANDLE}_SOURCES ${${CF_HANDLE}_CONTRACT_SOURCE})
 
+
+# openssl
+
+# Get parent directory and hardcode path to identity-contract
+get_filename_component(PARENT_DIR ${CMAKE_CURRENT_LIST_DIR} DIRECTORY)
+
+SET(OPENSSL_VERSION 3.1.8)
+SET(OPENSSL_BUILD_DIR ${PARENT_DIR}/identity-contract/build)
+SET(OPENSSL_WASM_INCLUDE_DIR ${OPENSSL_BUILD_DIR}/precompiled/include)
+SET(OPENSSL_WASM_LIB_DIR ${OPENSSL_BUILD_DIR}/precompiled/lib)
+SET(OPENSSL_WASM_CRYPTO_LIB ${OPENSSL_WASM_LIB_DIR}/libcrypto.a)
+SET(OPENSSL_WASM_SSL_LIB ${OPENSSL_WASM_LIB_DIR}/libssl.a)
+SET(OPENSSL_SOURCE_DIR ${PARENT_DIR}/identity-contract/src/packages/openssl)
+
 # ---------------------------------------------
 # Build the wawaka contract common library
 # ---------------------------------------------

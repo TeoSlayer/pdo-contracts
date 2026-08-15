@@ -18,14 +18,6 @@ INCLUDE(methods.cmake)
 
 # -----------------------------------------------------------------
 # -----------------------------------------------------------------
-SET(OPENSSL_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR})
-SET(OPENSSL_VERSION 3.1.8)
-
-SET(OPENSSL_WASM_INCLUDE_DIR ${OPENSSL_BUILD_DIR}/precompiled/include)
-SET(OPENSSL_WASM_LIB_DIR ${OPENSSL_BUILD_DIR}/precompiled/lib)
-SET(OPENSSL_WASM_CRYPTO_LIB ${OPENSSL_WASM_LIB_DIR}/libcrypto.a)
-SET(OPENSSL_WASM_SSL_LIB ${OPENSSL_WASM_LIB_DIR}/libssl.a)
-SET(OPENSSL_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/packages/openssl)
 
 ADD_CUSTOM_COMMAND(
   OUTPUT ${OPENSSL_WASM_CRYPTO_LIB} ${OPENSSL_WASM_SSL_LIB} ${OPENSSL_WASM_INCLUDE_DIR}
