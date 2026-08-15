@@ -14,42 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
 import os
-import pathlib
-import subprocess
 
-pdo_source_root=pathlib.Path(__file__).parent.parent
-version_file = pdo_source_root / 'VERSION'
-
-parser = argparse.ArgumentParser()
-
-parser.add_argument(
-    '--version-file', '-f',
-    help=f'File where version information is stored (default: {version_file})',
-    type=str)
-
-options = parser.parse_args()
-
-if options.version_file :
-    version_file = pathlib.Path(options.version_file)
-    pdo_source_root = version_file.parent
-
-# the version file is a tab separated list of version numbers and git commit hashes in reverse
-# order (newest is at the top of the file)
-with open(version_file, 'r') as vf :
-    (version, commit, *rest) = vf.readline().strip().split('\t')
-
-# the version is of the form x.y.z, there may be an optional 'v' at the beginning of the version
-# string
-(major, minor, patch) = version.strip('v').split('.')
-
-# compute the number of commits since the tagged version was
-# committed to the repository
-command = ['git', 'rev-list', commit + '...HEAD', '--count']
-output = subprocess.run(command, cwd=pdo_source_root, capture_output=True, text=True)
-count = output.stdout.strip()
-
-# the actual patch version number is the recorded patch number added to the number of commits
-# since the version was committed
-print('{}.{}.{}'.format(major, minor, int(patch) + int(count)))
+# The version stamped on every pdo-contracts Python package. It is a fixed value
+# rather than one derived from git history, so packages built together always
+# share the same version and their inter-package requirements resolve. Override
+# it with the PDO_CONTRACTS_VERSION environment variable.
+print(os.environ.get('PDO_CONTRACTS_VERSION', '0.2.0'))

@@ -22,7 +22,7 @@ SET(WHEEL_PATH "${CMAKE_BINARY_DIR}/dist" CACHE STRING "Path where python wheels
 
 FUNCTION(BUILD_WHEEL contract)
   SET(SOURCE ${CMAKE_CURRENT_SOURCE_DIR})
-  SET(WHEEL_FILE "${WHEEL_PATH}/pdo_${contract}-${PDO_CONTRACT_VERSION}-py3-none-any.whl")
+  SET(WHEEL_FILE "${WHEEL_PATH}/${contract}-wheel.stamp")
   FILE(STRINGS "${SOURCE}/MANIFEST" MANIFEST)
 
   SET(MultiValueArgs CONTRACT_TARGETS)
@@ -34,8 +34,9 @@ FUNCTION(BUILD_WHEEL contract)
   # they will be cleaned up with the global clean target
   ADD_CUSTOM_COMMAND(
     OUTPUT ${WHEEL_FILE} ${SOURCE}/build ${SOURCE}/pdo_${contract}.egg-info
-    COMMAND ${PYTHON}
-    ARGS -m build --wheel --outdir ${WHEEL_PATH}
+    COMMAND ${CMAKE_COMMAND} -E rm -f ${WHEEL_PATH}/pdo_${contract}-*.whl
+    COMMAND ${PYTHON} -m build --wheel --outdir ${WHEEL_PATH}
+    COMMAND ${CMAKE_COMMAND} -E touch ${WHEEL_FILE}
     WORKING_DIRECTORY ${SOURCE}
     DEPENDS ${MANIFEST} ${BC_CONTRACT_TARGETS})
 
@@ -43,8 +44,9 @@ FUNCTION(BUILD_WHEEL contract)
 
   STRING(JOIN "\n" INSTALL_COMMAND
     "MESSAGE(\"INSTALL ${contract}\")"
-    "EXECUTE_PROCESS(COMMAND ${PIP} uninstall --yes ${WHEEL_FILE})"
-    "EXECUTE_PROCESS(COMMAND ${PIP} install ${WHEEL_FILE})"
+    "FILE(GLOB WHEEL \"${WHEEL_PATH}/pdo_${contract}-*.whl\")"
+    "EXECUTE_PROCESS(COMMAND ${PIP} uninstall --yes pdo_${contract})"
+    "EXECUTE_PROCESS(COMMAND ${PIP} install \${WHEEL})"
     "EXECUTE_PROCESS(COMMAND ${RESOURCE_INSTALLER} --module pdo.${contract} --family ${contract})")
 
   INSTALL(CODE ${INSTALL_COMMAND})
