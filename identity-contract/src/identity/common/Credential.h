@@ -201,6 +201,7 @@ namespace identity
 // Credential Schema
 //
 // Required fields include:
+//    type -- list of type identifiers for this credential; at least one string required
 //    issuer -- identifier for the issuer of the credential, should be
 //        verifiable by the signature in the proof section
 //    credentialSubject -- specifies a claim, while strictly speaking a
@@ -214,9 +215,9 @@ namespace identity
 //    nonce -- base64 encoded number that serves to protect against replay attacks
 //    issuanceDate -- data-time string, earliest time when claims are valid
 //    expirationDate -- date-time string when the credential will expire
-//    type -- list of type identifiers for type objects, VerifiableCredential is assumed
 #define CREDENTIAL_SCHEMA                               \
     "{"                                                 \
+        SCHEMA_KW(type, [ "" ]) ","                     \
         SCHEMA_KWS(issuer, IDENTITY_SCHEMA) ","         \
         SCHEMA_KWS(credentialSubject, CLAIMS_SCHEMA)    \
     "}"
@@ -229,6 +230,7 @@ namespace identity
     {
     private:
     public:
+        std::vector<std::string> type_;  // required, at least one element
         ww::identity::Identity issuer_;
         ww::identity::Claims credentialSubject_;
 
@@ -240,8 +242,15 @@ namespace identity
 
         static bool verify_schema(const ww::value::Object& deserialized_object)
         {
-            return ww::exchange::SerializeableObject::verify_schema_actual(
-                deserialized_object, CREDENTIAL_SCHEMA);
+            if (! ww::exchange::SerializeableObject::verify_schema_actual(
+                deserialized_object, CREDENTIAL_SCHEMA))
+            {
+                return false;
+            }
+            CONTRACT_SAFE_LOG(3, "credential schema verified, now checking 'type' field");
+            ww::value::Array object_type;
+            deserialized_object.get_value("type", object_type);
+            return object_type.get_count() > 0;
         }
 
         bool deserialize(const ww::value::Object& credential);

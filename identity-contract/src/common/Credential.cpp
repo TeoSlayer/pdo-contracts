@@ -47,17 +47,17 @@ static bool deserialize_timestamp(
 
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
-static bool deserialize_context_path(
-    const ww::value::Array& context_array,
-    std::vector<std::string>& context_path)
+static bool deserialize_array(
+    const ww::value::Array& serialized_array,
+    std::vector<std::string>& deserialized_vector)
 {
-    context_path.resize(0);
+    deserialized_vector.resize(0);
 
-    const size_t count = context_array.get_count();
+    const size_t count = serialized_array.get_count();
     for (size_t index = 0; index < count; index++)
     {
-        const std::string c = context_array.get_string(index);
-        context_path.push_back(c);
+        const std::string c = serialized_array.get_string(index);
+        deserialized_vector.push_back(c);
     }
 
     return true;
@@ -65,13 +65,13 @@ static bool deserialize_context_path(
 
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
-static bool serialize_context_path(
-    const std::vector<std::string>& context_path,
-    ww::value::Array& context_array)
+static bool serialize_array(
+    const std::vector<std::string>& deserialized_vector,
+    ww::value::Array& serialized_array)
 {
-    for (size_t index = 0; index < context_path.size(); index++)
+    for (size_t index = 0; index < deserialized_vector.size(); index++)
     {
-        if (! context_array.append_string(context_path[index].c_str()))
+        if (! serialized_array.append_string(deserialized_vector[index].c_str()))
             return false;
     }
 
@@ -143,7 +143,7 @@ bool ww::identity::IdentityKey::deserialize(const ww::value::Object& serialized_
     if (! serialized_object.get_value("context_path", context_array))
         return false;
 
-    if (! deserialize_context_path(context_array, context_path_))
+    if (! deserialize_array(context_array, context_path_))
         return false;
 
     // Optional fields
@@ -168,7 +168,7 @@ bool ww::identity::IdentityKey::serialize(ww::value::Value& serialized_object) c
 
     // Required fields
     ww::value::Array context_array;
-    if (! serialize_context_path(context_path_, context_array))
+    if (! serialize_array(context_path_, context_array))
         return false;
 
     if (! serializer.set_value("context_path", context_array))
@@ -301,6 +301,16 @@ bool ww::identity::Credential::deserialize(const ww::value::Object& serialized_o
     if (! ww::identity::Credential::verify_schema(serialized_object))
         return false;
 
+    // Required: type (list of strings, at least one element)
+    ww::value::Array type_array;
+    if (! serialized_object.get_value("type", type_array))
+        return false;
+    if (type_array.get_count() == 0)
+        return false;
+
+    if (! deserialize_array(type_array, type_))
+        return false;
+
     ww::value::Object serialized_issuer;
     if (! serialized_object.get_value("issuer", serialized_issuer))
         return false;
@@ -344,6 +354,13 @@ bool ww::identity::Credential::deserialize(const ww::value::Object& serialized_o
 bool ww::identity::Credential::serialize(ww::value::Value& serialized_object) const
 {
     ww::value::Structure serializer(CREDENTIAL_SCHEMA);
+
+    // Required: type
+    ww::value::Array type_array;
+    if (! serialize_array(type_, type_array))
+        return false;
+    if (! serializer.set_value("type", type_array))
+        return false;
 
     ww::value::Value serialized_issuer;
     if (! issuer_.serialize(serialized_issuer))
