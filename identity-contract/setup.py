@@ -68,6 +68,7 @@ setup(
         'pdo.identity',
         'pdo.identity.plugins',
         'pdo.identity.scripts',
+        'pdo.identity.decentralized',
         'pdo.identity.resources',
         'pdo.identity.resources.etc',
         'pdo.identity.resources.context',

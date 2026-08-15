@@ -16,3 +16,7 @@ pdo/identity/resources/__init__.py
 pdo/identity/resources/resources.py
 pdo/identity/scripts/__init__.py
 pdo/identity/scripts/scripts.py
+pdo/identity/decentralized/__init__.py
+pdo/identity/decentralized/identity.py
+pdo/identity/decentralized/signature_authority.py
+pdo/identity/decentralized/policy_agent.py
