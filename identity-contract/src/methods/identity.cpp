@@ -354,6 +354,54 @@ bool ww::identity::identity::sign(const Message& msg, const Environment& env, Re
 
 // -----------------------------------------------------------------
 // METHOD:
+//   sign_with_contract_key
+//
+//   Sign a message with the contract's OWN signing key (ContractKeys.Signing),
+//   rather than a signing-context key. The public half of this key is the
+//   verifying_key the ledger attests in the contract metadata, so the resulting
+//   signature can be verified by anyone who trusts the wallet's ledger
+//   attestation -- e.g. the external_key_authority when the wallet authorizes an
+//   external key binding. Owner-only.
+//
+// JSON PARAMETERS:
+//   IDENTITY_SIGN_WITH_CONTRACT_KEY_PARAM_SCHEMA
+// RETURNS:
+//   base64 encoded signature
+// -----------------------------------------------------------------
+bool ww::identity::identity::sign_with_contract_key(const Message& msg, const Environment& env, Response& rsp)
+{
+    ASSERT_SENDER_IS_OWNER(env, rsp);
+    ASSERT_INITIALIZED(rsp);
+
+    ASSERT_SUCCESS(rsp, msg.validate_schema(IDENTITY_SIGN_WITH_CONTRACT_KEY_PARAM_SCHEMA),
+                   "invalid request, missing required parameters");
+
+    const std::string b64_message(msg.get_string("message"));
+    ww::types::ByteArray message;
+    ASSERT_SUCCESS(rsp, ww::crypto::b64_decode(b64_message, message),
+                   "invalid request, failed to decode message");
+
+    // the contract's own signing key; its public half is the ledger-attested
+    // verifying_key
+    std::string signing_key;
+    ASSERT_SUCCESS(rsp, ww::contract::base::get_signing_key(signing_key),
+                   "unexpected error, failed to get the contract signing key");
+
+    ww::types::ByteArray signature;
+    ASSERT_SUCCESS(rsp, ww::crypto::ecdsa::sign_message(message, signing_key, signature),
+                   "unexpected error, failed to sign the message");
+
+    std::string b64_signature;
+    ASSERT_SUCCESS(rsp, ww::crypto::b64_encode(signature, b64_signature),
+                   "unexpected error, failed to encode signature");
+
+    // ---------- RETURN ----------
+    ww::value::String s(b64_signature.c_str());
+    return rsp.value(s, false);
+}
+
+// -----------------------------------------------------------------
+// METHOD:
 //   verify
 //
 // JSON PARAMETERS:

@@ -88,6 +88,17 @@
         SCHEMA_KW(signature, "")                \
     "}"
 
+// sign_with_contract_key signs a message with the contract's OWN signing key
+// (ContractKeys.Signing), whose public half is the verifying_key the ledger
+// attests in the contract metadata -- unlike sign, which uses a signing-context
+// key unrelated to the ledger. This lets the wallet produce a signature anyone
+// can verify against its ledger attestation (e.g. to authorize an external key
+// binding).
+#define IDENTITY_SIGN_WITH_CONTRACT_KEY_PARAM_SCHEMA    \
+    "{"                                                 \
+        SCHEMA_KW(message, "")                          \
+    "}"
+
 #define IDENTITY_VERIFY_PARAM_SCHEMA            \
     "{"                                         \
         SCHEMA_KW(context_path, [ "" ]) ","     \
@@ -128,6 +139,7 @@ namespace identity
     bool describe_signing_context(const Message& msg, const Environment& env, Response& rsp);
     bool list_signing_contexts(const Message& msg, const Environment& env, Response& rsp);
     bool sign(const Message& msg, const Environment& env, Response& rsp);
+    bool sign_with_contract_key(const Message& msg, const Environment& env, Response& rsp);
     bool verify(const Message& msg, const Environment& env, Response& rsp);
     bool get_verifying_key(const Message& msg, const Environment& env, Response& rsp);
     bool get_extended_verifying_key(const Message& msg, const Environment& env, Response& rsp);

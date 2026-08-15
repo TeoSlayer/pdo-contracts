@@ -62,6 +62,7 @@ contract_method_reference_t contract_method_dispatch_table[] = {
     CONTRACT_METHOD2(describe_signing_context, ww::identity::identity::describe_signing_context),
     CONTRACT_METHOD2(list_signing_contexts, ww::identity::identity::list_signing_contexts),
     CONTRACT_METHOD2(sign, ww::identity::identity::sign),
+    CONTRACT_METHOD2(sign_with_contract_key, ww::identity::identity::sign_with_contract_key),
     CONTRACT_METHOD2(verify, ww::identity::identity::verify),
     CONTRACT_METHOD2(add_vc, ww::identity::identity::add_vc),
     CONTRACT_METHOD2(get_vc_list, ww::identity::identity::get_vc_list),

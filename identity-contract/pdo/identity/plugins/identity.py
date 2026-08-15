@@ -33,6 +33,7 @@ __all__ = [
     'op_describe_signing_context',
     'op_list_signing_contexts',
     'op_sign',
+    'op_sign_with_contract_key',
     'op_verify',
     'op_add_vc',
     'op_get_vc_list',
@@ -41,6 +42,7 @@ __all__ = [
     'cmd_register_signing_context',
     'cmd_list_signing_contexts',
     'cmd_sign',
+    'cmd_sign_with_contract_key',
     'cmd_verify',
     'cmd_create_identity',
     'cmd_add_vc',
@@ -266,6 +268,32 @@ class op_sign(pcontract.contract_op_base) :
         message = invocation_request('sign', context_path=path, message=b64_message)
         result = pcontract_cmd.send_to_contract(state, message, **session_params)
         cls.log_invocation(message, result)
+
+        return result
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+class op_sign_with_contract_key(pcontract.contract_op_base) :
+
+    name = "sign_with_contract_key"
+    help = "Sign a message with the contract's own (ledger-attested) signing key"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        subparser.add_argument(
+            '-m', '--message',
+            help='Base64 encoded message to sign',
+            type=str,
+            required=True)
+
+    @classmethod
+    def invoke(cls, state, session_params, message, **kwargs) :
+        session_params['commit'] = False
+
+        # message is already base64; the contract decodes it and signs the bytes
+        request = invocation_request('sign_with_contract_key', message=message)
+        result = pcontract_cmd.send_to_contract(state, request, **session_params)
+        cls.log_invocation(request, result)
 
         return result
 
@@ -566,6 +594,46 @@ class cmd_sign(pcommand.contract_command_base) :
 
 # -----------------------------------------------------------------
 # -----------------------------------------------------------------
+class cmd_sign_with_contract_key(pcommand.contract_command_base) :
+    name = "sign_with_contract_key"
+    help = "script to sign a message with the contract's own (ledger-attested) signing key"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        subparser.add_argument(
+            '--message',
+            help='Name of the file where the message is stored',
+            dest='message_file',
+            type=str,
+            required=True)
+        subparser.add_argument(
+            '--signature',
+            help='Name of the file where the signature will be saved',
+            dest='signature_file',
+            type=str,
+            required=True)
+
+    @classmethod
+    def invoke(cls, state, context, message_file, signature_file, **kwargs) :
+        save_file = pcontract_cmd.get_contract_from_context(state, context)
+
+        with open(message_file, 'r') as fp :
+            message = fp.read()
+
+        b64_message = pcrypto.byte_array_to_base64(pcrypto.string_to_byte_array(message))
+
+        session = pbuilder.SessionParameters(save_file=save_file)
+        result = pcontract.invoke_contract_op(op_sign_with_contract_key, state, context, session, b64_message, **kwargs)
+        result = json.loads(result)
+
+        with open(signature_file, 'w') as fp :
+            fp.write(result)
+
+        cls.display(f'saved signature to {signature_file}')
+        return result
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
 class cmd_verify(pcommand.contract_command_base) :
     name = "verify"
     help = "script to verify a signature using a signing context"
@@ -779,6 +847,7 @@ __operations__ = [
     op_describe_signing_context,
     op_list_signing_contexts,
     op_sign,
+    op_sign_with_contract_key,
     op_verify,
     op_add_vc,
     op_get_vc_list,
@@ -792,6 +861,7 @@ __commands__ = [
     cmd_register_signing_context,
     cmd_list_signing_contexts,
     cmd_sign,
+    cmd_sign_with_contract_key,
     cmd_verify,
     cmd_create_identity,
     cmd_add_vc,

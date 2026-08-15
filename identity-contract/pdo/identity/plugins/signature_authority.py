@@ -34,6 +34,7 @@ __all__ = [
     'op_describe_signing_context',
     'op_list_signing_contexts',
     'op_sign',
+    'op_sign_with_contract_key',
     'op_verify',
     'op_add_vc',
     'op_get_vc_list',
@@ -42,6 +43,7 @@ __all__ = [
     'op_verify_credential',
     'cmd_sign_credential',
     'cmd_verify_credential',
+    'cmd_sign_with_contract_key',
     'cmd_register_signing_context',
     'cmd_list_signing_contexts',
     'cmd_get_verifying_key',
@@ -61,11 +63,13 @@ op_register_signing_context = identity.op_register_signing_context
 op_describe_signing_context = identity.op_describe_signing_context
 op_list_signing_contexts = identity.op_list_signing_contexts
 op_sign = identity.op_sign
+op_sign_with_contract_key = identity.op_sign_with_contract_key
 op_verify = identity.op_verify
 op_add_vc = identity.op_add_vc
 op_get_vc_list = identity.op_get_vc_list
 op_get_vp = identity.op_get_vp
 
+cmd_sign_with_contract_key = identity.cmd_sign_with_contract_key
 cmd_register_signing_context = identity.cmd_register_signing_context
 cmd_list_signing_contexts = identity.cmd_list_signing_contexts
 cmd_get_verifying_key = identity.cmd_get_verifying_key
@@ -278,6 +282,7 @@ __operations__ = [
     op_describe_signing_context,
     op_list_signing_contexts,
     op_sign,
+    op_sign_with_contract_key,
     op_verify,
     op_add_vc,
     op_get_vc_list,
@@ -297,6 +302,7 @@ __commands__ = [
     cmd_get_vp,
     cmd_sign_credential,
     cmd_verify_credential,
+    cmd_sign_with_contract_key,
     cmd_create_signature_authority,
 ]
 
