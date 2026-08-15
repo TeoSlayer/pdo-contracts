@@ -23,8 +23,6 @@ import pdo.client.builder.contract as pcontract
 import pdo.client.builder.shell as pshell
 import pdo.client.commands.contract as pcontract_cmd
 
-import pdo.common.crypto as pcrypto
-
 import pdo.identity.plugins.identity as identity_plugin
 import pdo.identity.plugins.signature_authority as signature_plugin
 
@@ -40,6 +38,10 @@ __all__ = [
     'op_verify_credential',
     'op_register_trusted_issuer',
     'op_issue_policy_credential',
+    'op_set_policy_data',
+    'op_get_policy_data',
+    'op_list_trusted_issuers',
+    'op_get_requirements',
     'cmd_register_trusted_issuer',
     'cmd_issue_policy_credential',
     'cmd_verify_credential',
@@ -47,6 +49,10 @@ __all__ = [
     'cmd_list_signing_contexts',
     'cmd_get_verifying_key',
     'cmd_create_policy_agent',
+    'cmd_set_policy_data',
+    'cmd_get_policy_data',
+    'cmd_list_trusted_issuers',
+    'cmd_get_requirements',
     'do_policy_agent',
     'do_policy_agent_contract',
     'load_commands',
@@ -142,20 +148,107 @@ class op_issue_policy_credential(pcontract.contract_op_base) :
     @classmethod
     def add_arguments(cls, subparser) :
         subparser.add_argument(
-            '-c', '--credential',
-            help='Input credential for the policy (JSON)',
+            '-p', '--presentation',
+            help='Verifiable presentation containing input credentials (JSON)',
             type=pbuilder.invocation_parameter,
             required=True)
 
     @classmethod
-    def invoke(cls, state, session_params, credential, **kwargs) :
+    def invoke(cls, state, session_params, presentation, **kwargs) :
         session_params['commit'] = True
 
-        params = {
-            'credential' : credential,
-        }
+        message = invocation_request('issue_policy_credential', presentation=presentation)
+        result = pcontract_cmd.send_to_contract(state, message, **session_params)
+        cls.log_invocation(message, result)
 
-        message = invocation_request('issue_policy_credential', **params)
+        return result
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+
+class op_set_policy_data(pcontract.contract_op_base) :
+
+    name = "set_policy_data"
+    help = "set_policy_data"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        subparser.add_argument(
+            '-d', '--data',
+            help='Data for the policy (JSON)',
+            type=pbuilder.invocation_parameter,
+            required=True)
+
+    @classmethod
+    def invoke(cls, state, session_params, data, **kwargs) :
+        session_params['commit'] = True
+
+        params = data
+
+        message = invocation_request('set_policy_data', **params)
+        result = pcontract_cmd.send_to_contract(state, message, **session_params)
+        cls.log_invocation(message, result)
+
+        return result
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+class op_get_policy_data(pcontract.contract_op_base) :
+
+    name = "get_policy_data"
+    help = "Get the current policy data"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        pass
+
+    @classmethod
+    def invoke(cls, state, session_params, **kwargs) :
+        session_params['commit'] = False
+
+        message = invocation_request('get_policy_data')
+        result = pcontract_cmd.send_to_contract(state, message, **session_params)
+        cls.log_invocation(message, result)
+
+        return result
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+class op_list_trusted_issuers(pcontract.contract_op_base) :
+
+    name = "list_trusted_issuers"
+    help = "List all registered trusted issuers and their credential types (owner only)"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        pass
+
+    @classmethod
+    def invoke(cls, state, session_params, **kwargs) :
+        session_params['commit'] = False
+
+        message = invocation_request('list_trusted_issuers')
+        result = pcontract_cmd.send_to_contract(state, message, **session_params)
+        cls.log_invocation(message, result)
+
+        return result
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+class op_get_requirements(pcontract.contract_op_base) :
+
+    name = "get_requirements"
+    help = "Get the list of credential types required by this policy agent"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        pass
+
+    @classmethod
+    def invoke(cls, state, session_params, **kwargs) :
+        session_params['commit'] = False
+
+        message = invocation_request('get_requirements')
         result = pcontract_cmd.send_to_contract(state, message, **session_params)
         cls.log_invocation(message, result)
 
@@ -240,8 +333,8 @@ class cmd_issue_policy_credential(pcommand.contract_command_base) :
     @classmethod
     def add_arguments(cls, subparser) :
         subparser.add_argument(
-            '--signed-credential',
-            help='The name of the file where the signed credential is stored',
+            '--presentation',
+            help='The name of the file where the verifiable presentation is stored',
             type=str,
             required=True)
         subparser.add_argument(
@@ -251,19 +344,19 @@ class cmd_issue_policy_credential(pcommand.contract_command_base) :
             required=True)
 
     @classmethod
-    def invoke(cls, state, context, signed_credential, issued_credential, **kwargs) :
+    def invoke(cls, state, context, presentation, issued_credential, **kwargs) :
         save_file = pcontract_cmd.get_contract_from_context(state, context)
         if not save_file :
             raise ValueError('policy agent contract must be created and initialized')
 
-        with open(signed_credential, "r") as fp :
-            signed_credential_data = json.load(fp)
+        with open(presentation, "r") as fp :
+            presentation_data = json.load(fp)
 
         session = pbuilder.SessionParameters(save_file=save_file)
         issued_credential_data = pcontract.invoke_contract_op(
             op_issue_policy_credential,
             state, context, session,
-            credential=signed_credential_data,
+            presentation=presentation_data,
             **kwargs)
 
         with open(issued_credential, "w") as fp :
@@ -271,6 +364,42 @@ class cmd_issue_policy_credential(pcommand.contract_command_base) :
 
         cls.display('saved issued credential to {}'.format(issued_credential))
         return True
+
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+class cmd_set_policy_data(pcommand.contract_command_base) :
+    name = "set_policy"
+    help = "set_policy"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        subparser.add_argument(
+            '--data',
+            help='The name of the file where the data is stored',
+            type=str,
+            required=True)
+
+    @classmethod
+    def invoke(cls, state, context, data, **kwargs) :
+        save_file = pcontract_cmd.get_contract_from_context(state, context)
+        if not save_file :
+            raise ValueError('policy agent contract must be created and initialized')
+
+        with open(data, "r") as fp :
+            data = json.load(fp)
+
+        session = pbuilder.SessionParameters(save_file=save_file)
+        pcontract.invoke_contract_op(
+            op_set_policy_data,
+            state, context, session,
+            data=data,
+            **kwargs)
+
+        cls.display('data set {}'.format(data))
+
+        return True
+
 
 # -----------------------------------------------------------------
 # -----------------------------------------------------------------
@@ -315,6 +444,86 @@ class cmd_create_policy_agent(pcommand.contract_command_base) :
         return save_file
 
 # -----------------------------------------------------------------
+# -----------------------------------------------------------------
+class cmd_get_policy_data(pcommand.contract_command_base) :
+    name = "get_policy"
+    help = "Get the current policy data"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        subparser.add_argument(
+            '--file',
+            help='File where the policy data will be saved (optional)',
+            type=str,
+            required=False)
+
+    @classmethod
+    def invoke(cls, state, context, file=None, **kwargs) :
+        save_file = pcontract_cmd.get_contract_from_context(state, context)
+        if not save_file :
+            raise ValueError('policy agent contract must be created and initialized')
+
+        session = pbuilder.SessionParameters(save_file=save_file)
+        result = pcontract.invoke_contract_op(
+            op_get_policy_data, state, context, session,
+            **kwargs)
+
+        if file :
+            with open(file, 'w') as fp :
+                fp.write(result)
+
+        cls.display(result)
+        return result
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+class cmd_list_trusted_issuers(pcommand.contract_command_base) :
+    name = "list_issuers"
+    help = "List all registered trusted issuers and their credential types"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        pass
+
+    @classmethod
+    def invoke(cls, state, context, **kwargs) :
+        save_file = pcontract_cmd.get_contract_from_context(state, context)
+        if not save_file :
+            raise ValueError('policy agent contract must be created and initialized')
+
+        session = pbuilder.SessionParameters(save_file=save_file)
+        result = pcontract.invoke_contract_op(
+            op_list_trusted_issuers, state, context, session,
+            **kwargs)
+
+        cls.display(result)
+        return result
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+class cmd_get_requirements(pcommand.contract_command_base) :
+    name = "get_requirements"
+    help = "Get the list of credential types required by this policy agent"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        pass
+
+    @classmethod
+    def invoke(cls, state, context, **kwargs) :
+        save_file = pcontract_cmd.get_contract_from_context(state, context)
+        if not save_file :
+            raise ValueError('policy agent contract must be created and initialized')
+
+        session = pbuilder.SessionParameters(save_file=save_file)
+        result = pcontract.invoke_contract_op(
+            op_get_requirements, state, context, session,
+            **kwargs)
+        result = json.loads(result)
+        cls.display(result)
+        return result
+
+# -----------------------------------------------------------------
 # Create the generic, shell independent version of the aggregate command
 # -----------------------------------------------------------------
 __operations__ = [
@@ -329,6 +538,10 @@ __operations__ = [
     op_verify_credential,
     op_register_trusted_issuer,
     op_issue_policy_credential,
+    op_set_policy_data,
+    op_get_policy_data,
+    op_list_trusted_issuers,
+    op_get_requirements,
 ]
 
 do_policy_agent_contract = pcontract.create_shell_command('policy_agent_contract', __operations__)
@@ -341,6 +554,10 @@ __commands__ = [
     cmd_register_trusted_issuer,
     cmd_issue_policy_credential,
     cmd_create_policy_agent,
+    cmd_set_policy_data,
+    cmd_get_policy_data,
+    cmd_list_trusted_issuers,
+    cmd_get_requirements,
 ]
 
 do_policy_agent = pcommand.create_shell_command('policy_agent', __commands__)

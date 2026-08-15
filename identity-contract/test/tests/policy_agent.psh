@@ -140,6 +140,39 @@ if -o ${_error_code_} 0
 fi
 
 ## =================================================================
+echo ${HEADER} test get_requirements ${ENDC}
+## =================================================================
+policy_agent_contract get_requirements -f ${_pa_contract_} -s _requirements_
+if -o ${_error_code_} 0
+   echo ${ERROR} [Error ${_error_code_}] failed to get requirements; ${_error_message_} ${ENDC}
+   exit -v ${_error_code_}
+fi
+echo ${INFO} Requirements: ${ENDC}
+echo ${_requirements_}
+
+## =================================================================
+echo ${HEADER} test list_trusted_issuers ${ENDC}
+## =================================================================
+policy_agent_contract list_trusted_issuers -f ${_pa_contract_} -s _issuers_
+if -o ${_error_code_} 0
+   echo ${ERROR} [Error ${_error_code_}] failed to list trusted issuers; ${_error_message_} ${ENDC}
+   exit -v ${_error_code_}
+fi
+echo ${INFO} Trusted Issuers: ${ENDC}
+echo ${_issuers_}
+
+## =================================================================
+echo ${HEADER} test get_policy_data ${ENDC}
+## =================================================================
+policy_agent_contract get_policy_data -f ${_pa_contract_} -s _policy_data_
+if -o ${_error_code_} 0
+   echo ${ERROR} [Error ${_error_code_}] failed to get policy data; ${_error_message_} ${ENDC}
+   exit -v ${_error_code_}
+fi
+echo ${INFO} Policy Data: ${ENDC}
+echo ${_policy_data_}
+
+## =================================================================
 echo ${HEADER} create an identity contract to hold credentials ${ENDC}
 ## =================================================================
 set -s _id_contract_ -v /tmp/identity_pa.pdo
@@ -176,7 +209,7 @@ echo ${_vp_}
 
 echo ${INFO} issue the policy credential ${ENDC}
 policy_agent_contract issue_policy_credential -f ${_pa_contract_} \
-    -c ${_signed_credential1_} -s _issued_credential_
+    --presentation ${_vp_} -s _issued_credential_
 if -o ${_error_code_} 0
    echo ${ERROR} [Error ${_error_code_}] failed to issue the signed credential; ${_error_message_} ${ENDC}
    exit -v ${_error_code_}

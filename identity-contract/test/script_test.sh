@@ -264,8 +264,11 @@ try id_policy_agent register ${OPTS} --contract identity.patest.policy_agent \
     --issuer identity.satest.signature_authority --path satest ext1 --credential-types dummy
 
 yell issue a simple credential
+try id_wallet get_vp ${OPTS} --contract identity.idtest.wallet \
+    --types dummy --file ${TEST_ROOT}/vp1.json
+
 try id_policy_agent issue_credential ${OPTS} --contract identity.patest.policy_agent \
-    --signed-credential ${TEST_ROOT}/sa_credential1.json --issued-credential ${TEST_ROOT}/pa_credential1.json
+    --presentation ${TEST_ROOT}/vp1.json --issued-credential ${TEST_ROOT}/pa_credential1.json
 
 say issued credential is:
 say $(<${TEST_ROOT}/pa_credential1.json)
@@ -274,8 +277,11 @@ try id_policy_agent verify_credential ${OPTS} --contract identity.patest.policy_
     --signed-credential ${TEST_ROOT}/pa_credential1.json
 
 yell issue a complex credential
+try id_wallet get_vp ${OPTS} --contract identity.idtest2.wallet \
+    --types dummy --file ${TEST_ROOT}/vp2.json
+
 try id_policy_agent issue_credential ${OPTS} --contract identity.patest.policy_agent \
-    --signed-credential ${TEST_ROOT}/sa_credential2.json --issued-credential ${TEST_ROOT}/pa_credential2.json
+    --presentation ${TEST_ROOT}/vp2.json --issued-credential ${TEST_ROOT}/pa_credential2.json
 
 say issued verifiable credential is:
 say $(<${TEST_ROOT}/pa_credential2.json)
@@ -285,6 +291,14 @@ try id_credential extract --signed-credential ${TEST_ROOT}/pa_credential2.json
 
 try id_policy_agent verify_credential ${OPTS} --contract identity.patest.policy_agent \
     --signed-credential ${TEST_ROOT}/pa_credential2.json
+
+yell test policy agent public info endpoints
+say policy data:
+try id_policy_agent get_policy ${OPTS} --contract identity.patest.policy_agent
+say issuers list:
+try id_policy_agent list_issuers ${OPTS} --contract identity.patest.policy_agent
+say requirements:
+try id_policy_agent get_requirements ${OPTS} --contract identity.patest.policy_agent
 
 # =================================================================
 yell create a committee

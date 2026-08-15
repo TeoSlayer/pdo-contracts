@@ -14,6 +14,8 @@
  */
 
 #include <string>
+#include <map>
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -38,8 +40,10 @@
 static KeyValueStore policy_metadata_store("policy_metadata_store");
 
 const std::string md_issuer_path("issuer_path");
+const std::string md_policy_data("policy_data");
 const std::string md_trusted_issuers("trusted_issuers");
 const std::string initial_issuer_path("__ISSUER__");
+const std::string initial_policy_data("{}");
 
 // -----------------------------------------------------------------
 // UTILITY: load the trusted_issuers map from policy_metadata_store.
@@ -329,6 +333,10 @@ bool ww::identity::policy_agent::initialize_contract(const Environment &env)
     if (!manager.add_context(extensible, description, context_path))
         return false;
 
+    // set an empty policy data
+    if (!policy_metadata_store.set(md_policy_data, initial_policy_data))
+        return false;
+
     // initialize an empty trusted-issuers map
     if (!initialize_trusted_issuers())
         return false;
@@ -395,27 +403,77 @@ bool ww::identity::policy_agent::register_trusted_issuer(const Message &msg, con
 
 // -----------------------------------------------------------------
 // METHOD: issue_policy_credential
-//   Verify the incoming credential, process the policy decision and emit a new credential
+//   Verify credentials in the incoming verifiable presentation,
+//   process the policy decision and emit a new credential.
+//   Each VC's credential type is taken from the first element of its type list.
 //
 // JSON PARAMETERS:
 //   POLICY_AGENT_ISSUE_POLICY_CREDENTIAL_PARAM_SCHEMA
 // RETURNS:
-//   true signature is verified
+//   VERIFIABLE_CREDENTIAL_SCHEMA
 // -----------------------------------------------------------------
-bool ww::identity::policy_agent::issue_policy_credential(const Message& msg, const Environment& env, Response& rsp)
+bool ww::identity::policy_agent::issue_policy_credential(const Message &msg, const Environment &env, Response &rsp)
 {
     ASSERT_INITIALIZED(rsp);
 
     ASSERT_SUCCESS(rsp, msg.validate_schema(POLICY_AGENT_ISSUE_POLICY_CREDENTIAL_PARAM_SCHEMA),
                    "invalid request, missing required parameters");
 
-    // Get the credential parameter
-    ww::value::Object vc_object_in;
-    ASSERT_SUCCESS(rsp, msg.get_value("credential", vc_object_in), "missing required parameter; credential");
+    // deserialize the verifiable presentation
+    ww::value::Object vp_object;
+    ASSERT_SUCCESS(rsp, msg.get_value("presentation", vp_object),
+                   "invalid request, missing presentation");
 
-    // Verify the credential signature
-    ww::identity::VerifiableCredential vc_in;
-    ASSERT_SUCCESS(rsp, verify_credential(vc_object_in, vc_in), "invalid request, ill-formed credential");
+    ww::identity::VerifiablePresentation vp;
+    ASSERT_SUCCESS(rsp, vp.deserialize(vp_object),
+                   "invalid request, ill-formed verifiable presentation");
+
+    const std::map<std::string, const char *> claims_schema_map = get_claims_schemas();
+    std::map<std::string, ww::identity::Credential> credentials;
+
+    for (size_t i = 0; i < vp.presentation_.verifiableCredential_.size(); i++)
+    {
+        // re-serialize so verify_credential can re-deserialize and check signature
+        ww::value::Object vc_object;
+        ASSERT_SUCCESS(rsp, vp.presentation_.verifiableCredential_[i].serialize(vc_object),
+                       "unexpected error, failed to serialize credential from presentation");
+
+        ww::identity::VerifiableCredential vc;
+        ASSERT_SUCCESS(rsp, !vp.presentation_.verifiableCredential_[i].credential_.type_.empty(),
+                       "invalid request, credential missing type list");
+
+        const std::string credential_type = vp.presentation_.verifiableCredential_[i].credential_.type_[0];
+
+        // verify against the trusted issuer for this type
+        ASSERT_SUCCESS(rsp, verify_credential(vc_object, vc, credential_type),
+                       ("invalid request, ill-formed credential for type: " + credential_type).c_str());
+
+        // verify claims schema if this type is expected
+        auto it = claims_schema_map.find(credential_type);
+        ASSERT_SUCCESS(rsp, it != claims_schema_map.end(),
+                       ("invalid request, unexpected credential type: " + credential_type).c_str());
+
+        ASSERT_SUCCESS(rsp, vc.credential_.credentialSubject_.claims_.validate_schema(it->second),
+                       ("invalid claims for " + credential_type).c_str());
+
+        // store credential by type
+        ww::value::Object tmp;
+        ASSERT_SUCCESS(rsp, vc.credential_.serialize(tmp),
+                       ("unexpected error when serializing credential " + credential_type).c_str());
+
+        ASSERT_SUCCESS(rsp, credentials[credential_type].deserialize(tmp),
+                       ("unexpected error when storing credential " + credential_type).c_str());
+    }
+
+    // get the policy data
+    std::string policy_data_str;
+    ASSERT_SUCCESS(rsp, policy_metadata_store.get(md_policy_data, policy_data_str),
+                   "unexpected error, failed to fetch policy data");
+
+    ww::value::Object policy_data_object;
+
+    ASSERT_SUCCESS(rsp, policy_data_object.deserialize(policy_data_str.c_str()),
+                   "unexpected error, failed to deserialize policy data");
 
     // And build the veriable credential; just wanted to note that it would be
     // completely appropriate to make a constructor for VC's that took the
@@ -426,9 +484,11 @@ bool ww::identity::policy_agent::issue_policy_credential(const Message& msg, con
     // ---------- RETURN ----------
     ww::identity::Credential credential_out;
     CONTRACT_SAFE_LOG(3, "prepare to evaluate the policy");
-
-    ASSERT_SUCCESS(rsp, policy_agent_function(vc_in.credential_, credential_out),
+    ASSERT_SUCCESS(rsp, policy_agent_function(credentials, policy_data_object, credential_out),
                    "policy failed");
+    CONTRACT_SAFE_LOG(3, "finished evaluating the policy");
+
+    credential_out.issuer_.id_ = env.contract_id_;
 
     ww::identity::VerifiableCredential vc_out;
     ASSERT_SUCCESS(rsp, issue_credential(env.originator_id_, env.contract_id_, credential_out, vc_out),
@@ -439,4 +499,102 @@ bool ww::identity::policy_agent::issue_policy_credential(const Message& msg, con
                    "unexpected error, failed to serialized the credential");
 
     return rsp.value(serialized_vc_out, false);
+}
+
+// -----------------------------------------------------------------
+// METHOD: issue_policy_credential
+//   Verify the incoming credential, process the policy decision and emit a new credential
+//
+// JSON PARAMETERS:
+//   POLICY_AGENT_ISSUE_POLICY_CREDENTIAL_PARAM_SCHEMA
+// RETURNS:
+//   true signature is verified
+// -----------------------------------------------------------------
+bool ww::identity::policy_agent::set_policy_data(const Message &msg, const Environment &env, Response &rsp)
+{
+    ASSERT_SENDER_IS_OWNER(env, rsp);
+    ASSERT_INITIALIZED(rsp);
+    const char *policy_data_schema = get_policy_data_schema();
+
+    ASSERT_SUCCESS(rsp, msg.validate_schema(policy_data_schema),
+                   "invalid request, missing required parameters");
+
+    std::string serialized_policy_data;
+    ASSERT_SUCCESS(rsp, msg.serialize(serialized_policy_data), "failed to serialize policy data");
+
+    ASSERT_SUCCESS(rsp, policy_metadata_store.set(md_policy_data, serialized_policy_data), "failed to save policy data");
+
+    return rsp.success(true);
+}
+
+// -----------------------------------------------------------------
+// METHOD: get_policy_data
+//   Return the current policy data object.
+//
+// JSON PARAMETERS:
+//   none
+// RETURNS:
+//   policy data object
+// -----------------------------------------------------------------
+bool ww::identity::policy_agent::get_policy_data(const Message &msg, const Environment &env, Response &rsp)
+{
+    ASSERT_INITIALIZED(rsp);
+
+    std::string policy_data_str;
+    ASSERT_SUCCESS(rsp, policy_metadata_store.get(md_policy_data, policy_data_str),
+                   "unexpected error, failed to fetch policy data");
+
+    ww::value::Object policy_data;
+    ASSERT_SUCCESS(rsp, policy_data.deserialize(policy_data_str.c_str()),
+                   "unexpected error, failed to deserialize policy data");
+
+    return rsp.value(policy_data, false);
+}
+
+// -----------------------------------------------------------------
+// METHOD: list_trusted_issuers
+//   Return the trusted-issuers map. Each issuer ID maps to an array of
+//   records, where each record is { verifying_context, credential_types }.
+//   The verifying_context object itself carries its prefix_path,
+//   public_key, and chain_code.
+//
+// JSON PARAMETERS:
+//   none
+// RETURNS:
+//   object mapping issuer_id -> [ { verifying_context, credential_types }, ... ]
+// -----------------------------------------------------------------
+bool ww::identity::policy_agent::list_trusted_issuers(const Message &msg, const Environment &env, Response &rsp)
+{
+    ASSERT_INITIALIZED(rsp);
+
+    ww::value::Object trusted_issuers;
+    ASSERT_SUCCESS(rsp, get_trusted_issuers_map(trusted_issuers),
+                   "unexpected error, failed to load trusted issuers map");
+
+    return rsp.value(trusted_issuers, false);
+}
+
+// -----------------------------------------------------------------
+// METHOD: get_requirements
+//   Return the list of credential types required by this policy agent.
+//
+// JSON PARAMETERS:
+//   none
+// RETURNS:
+//   array of credential type strings
+// -----------------------------------------------------------------
+bool ww::identity::policy_agent::get_requirements(const Message &msg, const Environment &env, Response &rsp)
+{
+    ASSERT_INITIALIZED(rsp);
+
+    const std::map<std::string, const char *> claims_schema_map = get_claims_schemas();
+
+    ww::value::Array requirements;
+    for (const auto &[credential_type, schema] : claims_schema_map)
+    {
+        ASSERT_SUCCESS(rsp, requirements.append_string(credential_type.c_str()),
+                       "unexpected error, failed to build requirements list");
+    }
+
+    return rsp.value(requirements, false);
 }
