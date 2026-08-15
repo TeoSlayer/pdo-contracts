@@ -1,0 +1,7 @@
+# -----------------------------------------------------------------
+# Rego family contract source
+# -----------------------------------------------------------------
+[ContractFamily.Rego]
+rego_evaluator = { source = "${home}/contracts/rego/_rego_rego_evaluator.b64" }
+rego_policy_agent = { source = "${home}/contracts/rego/_rego_rego_policy_agent.b64" }
+rego_token = { source = "${home}/contracts/rego/_rego_rego_token.b64" }

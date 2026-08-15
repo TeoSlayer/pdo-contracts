@@ -1,0 +1,7 @@
+# -----------------------------------------------------------------
+# identity ${identity}
+# -----------------------------------------------------------------
+[identity.${identity}.rego_evaluator]
+identity = "${user}"
+module = "pdo.rego.plugins.rego_evaluator"
+source = "${ContractFamily.Rego.rego_evaluator.source}"
