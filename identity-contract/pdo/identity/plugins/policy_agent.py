@@ -311,7 +311,7 @@ __operations__ = [
     op_issue_policy_credential,
 ]
 
-do_policy_agent_contract = pcontract.create_shell_command('identity_contract', __operations__)
+do_policy_agent_contract = pcontract.create_shell_command('policy_agent_contract', __operations__)
 
 __commands__ = [
     cmd_get_verifying_key,
@@ -323,7 +323,7 @@ __commands__ = [
     cmd_create_policy_agent,
 ]
 
-do_policy_agent = pcommand.create_shell_command('identity', __commands__)
+do_policy_agent = pcommand.create_shell_command('policy_agent', __commands__)
 
 # -----------------------------------------------------------------
 # Enable binding of the shell independent version to a pdo-shell command
