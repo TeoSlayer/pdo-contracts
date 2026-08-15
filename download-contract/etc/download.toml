@@ -1,0 +1,6 @@
+# -----------------------------------------------------------------
+# Download family contract source
+# -----------------------------------------------------------------
+[ContractFamily.Download]
+download_token = { source = "${home}/contracts/download/_download_download_token.b64" }
+policy_agent = { source = "${home}/contracts/download/_download_policy_agent.b64" }

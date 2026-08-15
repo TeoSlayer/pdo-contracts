@@ -1,0 +1,7 @@
+{
+    "allowed_institutions": [
+        "abc",
+        "def"
+    ],
+    "consent_document": "doc_did"
+}
