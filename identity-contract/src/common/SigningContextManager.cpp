@@ -169,6 +169,78 @@ bool ww::identity::SigningContextManager::remove_context(
 }
 
 // -----------------------------------------------------------------
+// list_contexts
+//
+// Walk the signing-context tree starting at root_path and append a
+// descriptor per concrete node into descriptors. Descent stops at
+// extensible contexts; a root_path that descends past an extensible
+// context is rejected. Reads SigningContext fields directly via the
+// friend relationship so no JSON round-trip is needed.
+// -----------------------------------------------------------------
+bool ww::identity::SigningContextManager::list_contexts(
+    const std::vector<std::string>& root_path,
+    ww::value::Array& descriptors) const
+{
+    // Validate the starting point: it must resolve to a concrete node,
+    // not partway into an extensible subtree.
+    {
+        ww::identity::SigningContext start_ctx;
+        std::vector<std::string> start_ext;
+        ERROR_IF_NOT(find_context(root_path, start_ext, start_ctx),
+                     "unable to locate context");
+        ERROR_IF(start_ext.size() > 0,
+                 "path descends into an extensible context");
+    }
+
+    // DFS with an explicit work stack to avoid recursion on the WASM stack.
+    std::vector<std::vector<std::string>> work_stack;
+    work_stack.push_back(root_path);
+
+    while (! work_stack.empty())
+    {
+        std::vector<std::string> current_path = work_stack.back();
+        work_stack.pop_back();
+
+        ww::identity::SigningContext ctx;
+        std::vector<std::string> ext;
+        ERROR_IF_NOT(find_context(current_path, ext, ctx),
+                     "failed to load context during walk");
+
+        // Build a descriptor { path, description, extensible } — never include keys.
+        ww::value::Array path_array;
+        for (const auto& element : current_path)
+        {
+            ERROR_IF_NOT(path_array.append_string(element.c_str()),
+                         "failed to build path array");
+        }
+
+        ww::value::Structure descriptor(SIGNING_CONTEXT_DESCRIPTOR_SCHEMA);
+        ERROR_IF_NOT(descriptor.set_value("path", path_array),
+                     "failed to set descriptor path");
+        ERROR_IF_NOT(descriptor.set_string("description", ctx.description_.c_str()),
+                     "failed to set descriptor description");
+        ERROR_IF_NOT(descriptor.set_boolean("extensible", ctx.extensible_),
+                     "failed to set descriptor extensible");
+
+        ERROR_IF_NOT(descriptors.append_value(descriptor),
+                     "failed to append descriptor");
+
+        // Extensible nodes have no enumerable children — stop descent.
+        if (ctx.extensible_)
+            continue;
+
+        for (const auto& child_name : ctx.subcontexts_)
+        {
+            std::vector<std::string> child_path = current_path;
+            child_path.push_back(child_name);
+            work_stack.push_back(child_path);
+        }
+    }
+
+    return true;
+}
+
+// -----------------------------------------------------------------
 // find_context
 //
 // Given a context path, find the context with the longest matching

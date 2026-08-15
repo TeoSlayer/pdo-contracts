@@ -32,6 +32,7 @@ __all__ = [
     'op_get_extended_verifying_key',
     'op_register_signing_context',
     'op_describe_signing_context',
+    'op_list_signing_contexts',
     'op_sign',
     'op_verify',
     'op_sign_credential',
@@ -39,6 +40,7 @@ __all__ = [
     'cmd_sign_credential',
     'cmd_verify_credential',
     'cmd_register_signing_context',
+    'cmd_list_signing_contexts',
     'cmd_get_verifying_key',
     'cmd_create_signature_authority',
     'do_signature_authority',
@@ -51,10 +53,12 @@ op_get_verifying_key = identity.op_get_verifying_key
 op_get_extended_verifying_key = identity.op_get_extended_verifying_key
 op_register_signing_context = identity.op_register_signing_context
 op_describe_signing_context = identity.op_describe_signing_context
+op_list_signing_contexts = identity.op_list_signing_contexts
 op_sign = identity.op_sign
 op_verify = identity.op_verify
 
 cmd_register_signing_context = identity.cmd_register_signing_context
+cmd_list_signing_contexts = identity.cmd_list_signing_contexts
 cmd_get_verifying_key = identity.cmd_get_verifying_key
 
 logger = logging.getLogger(__name__)
@@ -260,6 +264,7 @@ __operations__ = [
     op_get_extended_verifying_key,
     op_register_signing_context,
     op_describe_signing_context,
+    op_list_signing_contexts,
     op_sign,
     op_verify,
     op_sign_credential,
@@ -271,6 +276,7 @@ do_signature_authority_contract = pcontract.create_shell_command('signature_auth
 __commands__ = [
     cmd_get_verifying_key,
     cmd_register_signing_context,
+    cmd_list_signing_contexts,
     cmd_sign_credential,
     cmd_verify_credential,
     cmd_create_signature_authority,

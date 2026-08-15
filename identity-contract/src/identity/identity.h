@@ -59,6 +59,23 @@
         SCHEMA_KW(extensible, true)                     \
     "}"
 
+// list_signing_contexts walks the signing-context tree starting at the
+// given context_path (empty array means root) and returns a flat list
+// of descriptors. Descent stops at extensible contexts. Paths that
+// descend past an extensible context are rejected.
+
+#define IDENTITY_LIST_SIGNING_CONTEXTS_PARAM_SCHEMA     \
+    "{"                                                 \
+        SCHEMA_KW(context_path, [ "" ])                 \
+    "}"
+
+// SIGNING_CONTEXT_DESCRIPTOR_SCHEMA is defined in SigningContextManager.h
+// (the manager owns the per-node descriptor shape it produces).
+#define IDENTITY_LIST_SIGNING_CONTEXTS_RESULT_SCHEMA    \
+    "{"                                                 \
+        SCHEMA_KWS(contexts, "[" SIGNING_CONTEXT_DESCRIPTOR_SCHEMA "]") \
+    "}"
+
 #define IDENTITY_SIGN_PARAM_SCHEMA              \
     "{"                                         \
         SCHEMA_KW(context_path, [ "" ]) ","     \
@@ -98,6 +115,7 @@ namespace identity
     bool initialize(const Message& msg, const Environment& env, Response& rsp);
     bool register_signing_context(const Message& msg, const Environment& env, Response& rsp);
     bool describe_signing_context(const Message& msg, const Environment& env, Response& rsp);
+    bool list_signing_contexts(const Message& msg, const Environment& env, Response& rsp);
     bool sign(const Message& msg, const Environment& env, Response& rsp);
     bool verify(const Message& msg, const Environment& env, Response& rsp);
     bool get_verifying_key(const Message& msg, const Environment& env, Response& rsp);

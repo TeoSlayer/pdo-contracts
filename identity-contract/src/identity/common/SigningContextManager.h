@@ -19,8 +19,19 @@
 
 #include "KeyValue.h"
 #include "Types.h"
+#include "Value.h"
 
 #include "SigningContext.h"
+
+// Per-node descriptor produced by SigningContextManager::list_contexts.
+// Owner-only callers wrap an array of these in their own response schema;
+// keys are never included.
+#define SIGNING_CONTEXT_DESCRIPTOR_SCHEMA               \
+    "{"                                                 \
+        SCHEMA_KW(path, [ "" ]) ","                     \
+        SCHEMA_KW(description, "") ","                  \
+        SCHEMA_KW(extensible, true)                     \
+    "}"
 
 namespace ww
 {
@@ -52,6 +63,14 @@ namespace identity
             const std::vector<std::string>& context_path,
             std::vector<std::string>& extended_path,
             ww::identity::SigningContext& context) const;
+
+        // Walk the signing-context tree starting at root_path (empty == root)
+        // and append a SIGNING_CONTEXT_DESCRIPTOR_SCHEMA entry per concrete
+        // node into descriptors. Descent stops at extensible contexts; a
+        // root_path that descends past an extensible context is rejected.
+        bool list_contexts(
+            const std::vector<std::string>& root_path,
+            ww::value::Array& descriptors) const;
 
         bool initialize(void);
 

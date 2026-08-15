@@ -210,6 +210,48 @@ bool ww::identity::identity::describe_signing_context(
 
 // -----------------------------------------------------------------
 // METHOD:
+//   list_signing_contexts
+//
+//   Walk the signing-context tree starting at the given context_path
+//   (empty array means root) and return a flat list of descriptors
+//   { path, description, extensible }. Descent stops at extensible
+//   contexts. Paths that descend past an extensible context are
+//   rejected. Owner-only; keys are never returned.
+//
+// JSON PARAMETERS:
+//   IDENTITY_LIST_SIGNING_CONTEXTS_PARAM_SCHEMA
+// RETURNS:
+//   IDENTITY_LIST_SIGNING_CONTEXTS_RESULT_SCHEMA
+// -----------------------------------------------------------------
+bool ww::identity::identity::list_signing_contexts(
+    const Message& msg, const Environment& env, Response& rsp)
+{
+    ASSERT_SENDER_IS_OWNER(env, rsp);
+    ASSERT_INITIALIZED(rsp);
+
+    ASSERT_SUCCESS(rsp, msg.validate_schema(IDENTITY_LIST_SIGNING_CONTEXTS_PARAM_SCHEMA),
+                   "invalid request, missing required parameters");
+
+    // accept an empty path (= root); minimum_size = 0
+    std::vector<std::string> root_path;
+    ASSERT_SUCCESS(rsp, get_context_path(msg, root_path, 0),
+                   "invalid request, ill-formed context path");
+
+    ww::identity::SigningContextManager manager(signing_context_store);
+
+    ww::value::Array contexts_out;
+    ASSERT_SUCCESS(rsp, manager.list_contexts(root_path, contexts_out),
+                   "invalid request, failed to list signing contexts");
+
+    ww::value::Structure result(IDENTITY_LIST_SIGNING_CONTEXTS_RESULT_SCHEMA);
+    ASSERT_SUCCESS(rsp, result.set_value("contexts", contexts_out),
+                   "unexpected error, failed to set contexts on result");
+
+    return rsp.value(result, false);
+}
+
+// -----------------------------------------------------------------
+// METHOD:
 //   sign
 //
 // JSON PARAMETERS:
