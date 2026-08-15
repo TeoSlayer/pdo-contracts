@@ -51,7 +51,7 @@ F_LOGLEVEL=${PDO_LOG_LEVEL:-info}
 F_LOGFILE=${PDO_LOG_FILE:-__screen__}
 F_CONTEXT_FILE=${SOURCE_ROOT}/test/test_context.toml
 F_CONTEXT_TEMPLATES=${PDO_HOME}/contracts/identity/context
-F_PREFERRED=random
+F_PREFERRED=http://localhost:7101
 
 F_USAGE='--host service-host | --ledger url | --loglevel [debug|info|warn] | --logfile file | --preferred [host]'
 SHORT_OPTS='h:l:p:'
