@@ -41,10 +41,12 @@ __all__ = [
     "op_escrow",
     "op_release",
     "op_claim",
+    "op_create_capability",
     "op_do_operation",
     "cmd_mint_tokens",
     "cmd_transfer_assets",
     "cmd_do_operation",
+    "cmd_create_capability",
     "do_rego_token",
     "do_rego_token_contract",
     "load_commands",
@@ -77,10 +79,53 @@ logger = logging.getLogger(__name__)
 
 ## -----------------------------------------------------------------
 ## -----------------------------------------------------------------
+class op_create_capability(pcontract.contract_op_base):
+    """op_create_capability mints the guardian capability the rego_policy_agent
+    authorized and returns it instead of redeeming it. The capability is bound to
+    the guardian named by the token, not to whoever holds it, so it can be handed
+    to the party that will actually contact the guardian -- an FL server passing
+    it to the FL client running beside the guardian, for instance.
+    """
+
+    name = "create_capability"
+    help = "create a guardian capability from a rego policy decision credential"
+
+    @classmethod
+    def add_arguments(cls, subparser):
+        subparser.add_argument(
+            "--vc",
+            help="Input policy decision vc for the token",
+            type=pbuilder.invocation_parameter,
+            required=True,
+        )
+
+    @classmethod
+    def invoke(cls, state, session_params, vc, **kwargs):
+        session_params["commit"] = False
+
+        # send the request to the contract to create a capability for the guardian
+        params = {}
+        params["policy_vc"] = vc
+
+        message = invocation_request("do_operation", **params)
+        capability = pcontract_cmd.send_to_contract(state, message, **session_params)
+
+        capability = json.loads(capability)
+
+        cls.log_invocation(message, capability)
+
+        return capability
+
+
+## -----------------------------------------------------------------
+## -----------------------------------------------------------------
 class op_do_operation(pcontract.contract_op_base):
     """op_do_operation performs the guardian operation the rego_policy_agent
     authorized, gated on the policy decision credential it issued. The operation
     (its name and parameters) is carried in the credential's claims.
+
+    This is op_create_capability followed by redeeming the capability directly,
+    for the case where the caller is also the one contacting the guardian.
     """
 
     name = "op_operation"
@@ -101,18 +146,7 @@ class op_do_operation(pcontract.contract_op_base):
 
     @classmethod
     def invoke(cls, state, session_params, vc, url, **kwargs):
-        session_params["commit"] = False
-
-        # send the request to the contract to create a capability for the guardian
-        params = {}
-        params["policy_vc"] = vc
-
-        message = invocation_request("do_operation", **params)
-        capability = pcontract_cmd.send_to_contract(state, message, **session_params)
-
-        capability = json.loads(capability)
-
-        cls.log_invocation(message, capability)
+        capability = op_create_capability.invoke(state, session_params, vc, **kwargs)
 
         # process the capability that was created
         service_client = GuardianServiceClient(url)
@@ -181,6 +215,55 @@ class cmd_do_operation(pcommand.contract_command_base):
 
 
 ## -----------------------------------------------------------------
+## -----------------------------------------------------------------
+class cmd_create_capability(pcommand.contract_command_base):
+    """cmd_create_capability mints the guardian capability the rego_policy_agent
+    authorized and writes it to a file, leaving it to be redeemed elsewhere.
+    """
+
+    name = "create_capability"
+    help = "create a guardian capability from a rego policy decision credential"
+
+    @classmethod
+    def add_arguments(cls, subparser):
+        subparser.add_argument(
+            "--vc-file",
+            help="Input policy decision vc file for the token",
+            type=str,
+            required=True,
+        )
+        subparser.add_argument(
+            "--output-file",
+            help="where to save the capability",
+            type=str,
+            required=True,
+        )
+
+    @classmethod
+    def invoke(cls, state, context, vc_file, output_file, **kwargs):
+        save_file = pcontract_cmd.get_contract_from_context(state, context)
+        if not save_file:
+            raise ValueError("token has not been created")
+
+        with open(vc_file, "r") as fp:
+            signed_credential_data = json.load(fp)
+
+        session = pbuilder.SessionParameters(save_file=save_file)
+        capability = pcontract.invoke_contract_op(
+            op_create_capability,
+            state,
+            context,
+            session,
+            vc=signed_credential_data,
+            **kwargs,
+        )
+        with open(output_file, "w") as fp:
+            json.dump(capability, fp)
+
+        return capability
+
+
+## -----------------------------------------------------------------
 ## Create the generic, shell independent version of the aggregate command
 ## -----------------------------------------------------------------
 __operations__ = [
@@ -195,6 +278,7 @@ __operations__ = [
     op_escrow,
     op_release,
     op_claim,
+    op_create_capability,
     op_do_operation,
     op_register_trusted_issuer,
     op_list_trusted_issuers,
@@ -208,6 +292,7 @@ __commands__ = [
     cmd_mint_tokens,
     cmd_transfer_assets,
     cmd_do_operation,
+    cmd_create_capability,
     cmd_register_trusted_issuer,
     cmd_list_trusted_issuers,
 ]

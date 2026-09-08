@@ -1,6 +1,7 @@
 from pdo.rego.plugins.rego_token import (
     cmd_mint_tokens,
     cmd_do_operation,
+    cmd_create_capability,
     cmd_register_trusted_issuer,
     cmd_list_trusted_issuers,
 )
@@ -70,6 +71,12 @@ def list_trusted_issuers(state, contract_id, user, **cmd_args):
 def do_operation(state, contract_id, user, url, **cmd_args):
     return _invoke_rego_token(
         state, contract_id, user, url, cmd_do_operation, **cmd_args
+    )
+
+
+def create_capability(state, contract_id, user, **cmd_args):
+    return _invoke_rego_token(
+        state, contract_id, user, "", cmd_create_capability, **cmd_args
     )
 
 

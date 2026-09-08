@@ -46,8 +46,9 @@ class ProcessCapabilityApp(object) :
                 },
                 "required" : [ "encrypted_session_key", "session_key_iv", "encrypted_message" ]
             },
+            "request_context" : { "type" : "object" },
         },
-        "required" : [ "minted_identity", "operation" ],
+        "required" : [ "minted_identity", "operation", "request_context" ],
     }
 
     __operation_schema__ = {
@@ -105,6 +106,7 @@ class ProcessCapabilityApp(object) :
         # find the operation, we've already validated the JSON so no errors here
         method_name = operation_message['method_name']
         parameters = operation_message['parameters']
+        request_context = request['request_context']
 
         logger.info("process capability operation %s with parameters %s", method_name, parameters)
 
@@ -139,7 +141,7 @@ class ProcessCapabilityApp(object) :
 
         # dispatch the operation
         try :
-            operation_result = operation(parameters)
+            operation_result = operation(parameters, request_context)
             if operation_result is None :
                 return ErrorResponse(start_response, "operation failed", HTTPStatus.UNPROCESSABLE_ENTITY)
         except Exception as e :

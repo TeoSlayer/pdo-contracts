@@ -138,5 +138,6 @@ class GuardianServiceClient(GenericServiceClient) :
         return self.__post_request__('provision_token_object', params)
 
     # -----------------------------------------------------------------
-    def process_capability(self, **params) :
+    def process_capability(self, request_context=None, **params) :
+        params['request_context'] = request_context or {}
         return self.__post_request__('process_capability', params)
