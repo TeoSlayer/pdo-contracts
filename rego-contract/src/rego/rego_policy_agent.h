@@ -27,21 +27,26 @@
 // (registered directly in the dispatch table); only the Rego-specific methods
 // are declared here.
 
-// set_rego_policy: set (or replace) the Rego policy -- a list of
-// [ subpolicy_id, source ] pairs. May be called any number of times; each call
-// replaces the whole policy. The method derives and stores the per-role
-// requirements and the issue_policy_credential() input schema from the subpolicies.
+// set_rego_policy: set the Rego policy, once -- a list of
+// [ subpolicy_id, source ] pairs. Trusting the agent means trusting this one
+// policy, so it never changes. The method derives and stores the per-role
+// requirements, the issue_policy_credential() input schema and the type of
+// credential issued from the subpolicies.
 #define REGO_POLICY_AGENT_SET_POLICY_PARAM_SCHEMA \
     "{" SCHEMA_KW(rego_modules, []) "}"
 
 // issue_policy_credential: supply the presentations to judge under the
-// "presentation" keyword (singular, so this can share the inherited policy_agent
-// issue op) as an object keyed by role, { role: <verifiable presentation>, ... }.
-// The detailed shape (which roles, each value a verifiable presentation) is
-// checked against the schema that set_rego_policy stored, so this top-level
-// schema only requires an object.
-#define REGO_POLICY_AGENT_ISSUE_PARAM_SCHEMA \
-    "{" SCHEMA_KW(presentation, {}) "}"
+// "presentation" keyword as an object keyed by role,
+// { role: <verifiable presentation>, ... }, and the values the requester
+// declares (for instance the project) under "request", handed to every
+// subpolicy as input.request. The detailed shape (which roles, each value a
+// verifiable presentation) is checked against the schema that set_rego_policy
+// stored, so this top-level schema only requires objects.
+#define REGO_POLICY_AGENT_ISSUE_PARAM_SCHEMA            \
+    "{"                                                 \
+        SCHEMA_KW(presentation, {}) ","                 \
+        SCHEMA_KW(request, {})                          \
+    "}"
 
 // Schemas for the two rules every subpolicy must expose. The contract validates a
 // subpolicy's output against the matching schema before using it.
@@ -49,11 +54,11 @@
 // (roles are arbitrary keys, so the schema can only require an object)
 #define REGO_SUBPOLICY_REQUIREMENTS_SCHEMA "{}"
 
-// The operation a subpolicy authorizes: an operation name and its parameters.
-// The parameters are opaque (their shape is decided by the operation itself), so
-// the schema can only require an object. This is the shape carried through the
-// merged result, the issued credential's claims, and finally parsed by the
-// rego_token to build the guardian capability.
+// The operation a policy_decision authorizes: an operation name and its
+// parameters. The parameters are opaque (their shape is decided by the operation
+// itself), so the schema can only require an object. This is the shape of a
+// policy_decision credential's claims, parsed by the rego_token to build the
+// guardian capability.
 //   { "name": <operation name>, "parameters": { ... } }
 #define REGO_OPERATION_SCHEMA                   \
     "{"                                         \
@@ -81,7 +86,8 @@
 //       credentials are signed with) or "rsa" (RSASSA-PKCS1-v1_5 over SHA-256).
 //
 // A subpolicy that needs no supplied-key verification returns an empty
-// vc_supplied_verification_tasks list.
+// vc_supplied_verification_tasks list. Either way, a credential whose issuer is
+// not its signer fails verification.
 #define REGO_VERIFICATION_TASK_SCHEMA           \
     "{" SCHEMA_KW(index, 0) "}"
 
@@ -93,14 +99,23 @@
     "}"
 
 //   data.subpolicy.result ->
-//     { decision, verification_tasks, vc_supplied_verification_tasks, operation }
+//     { decision, verification_tasks, vc_supplied_verification_tasks, credential? }
 #define REGO_SUBPOLICY_RESULT_SCHEMA                                    \
     "{"                                                                 \
         SCHEMA_KW(decision, true) ","                                   \
         SCHEMA_KWS(verification_tasks, "[" REGO_VERIFICATION_TASK_SCHEMA "]") "," \
         SCHEMA_KWS(vc_supplied_verification_tasks,                      \
-                   "[" REGO_VC_SUPPLIED_VERIFICATION_TASK_SCHEMA "]") ","\
-        SCHEMA_KWS(operation, REGO_OPERATION_SCHEMA)                    \
+                   "[" REGO_VC_SUPPLIED_VERIFICATION_TASK_SCHEMA "]")   \
+    "}"
+
+// The credential to issue. Exactly one subpolicy describes it -- the delivery
+// module of an asset's policy, or the rule of an authority -- and it is the one
+// that declares the type issued, as data.subpolicy.issues.
+//   credential -> { "subject": <DID>, "claims": { ... } }
+#define REGO_CREDENTIAL_SCHEMA                  \
+    "{"                                         \
+        SCHEMA_KW(subject, "") ","              \
+        SCHEMA_KW(claims, {})                   \
     "}"
 
 namespace ww
@@ -109,18 +124,19 @@ namespace rego
 {
 namespace rego_policy_agent
 {
-    // set (or replace) the Rego policy (a list of [ subpolicy_id, source ] pairs)
+    // set the Rego policy, once (a list of [ subpolicy_id, source ] pairs)
     bool set_rego_policy(const Message& msg, const Environment& env, Response& rsp);
 
-    // return the whole list of [ subpolicy_id, source ] pairs
+    // return the credential type, the whole list of [ subpolicy_id, source ]
+    // pairs, and the merged requirements
     bool get_rego_policy(const Message& msg, const Environment& env, Response& rsp);
 
     // return the merged per-role credential requirements set by set_rego_policy
     bool get_requirements(const Message& msg, const Environment& env, Response& rsp);
 
     // run every subpolicy, merge the results, verify the flagged credentials, and --
-    // if the policy allows -- issue a signed credential whose claims are the
-    // merged operation
+    // if the policy allows -- issue a signed credential of the policy's type, as
+    // the one subpolicy that describes it says
     bool issue_policy_credential(const Message& msg, const Environment& env, Response& rsp);
 
 }; // rego_policy_agent

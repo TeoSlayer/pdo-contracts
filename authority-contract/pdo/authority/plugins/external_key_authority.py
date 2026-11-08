@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
 import json
 import logging
 
@@ -49,12 +50,14 @@ __all__ = [
     'op_sign_credential',
     'op_verify_credential',
     'op_register_trusted_issuer',
+    'op_unregister_trusted_issuer',
     'op_list_trusted_issuers',
     'cmd_register_signing_context',
     'cmd_list_signing_contexts',
     'cmd_get_verifying_key',
     'cmd_verify_credential',
     'cmd_register_trusted_issuer',
+    'cmd_unregister_trusted_issuer',
     'cmd_list_trusted_issuers',
     'cmd_create_external_key_authority',
     'cmd_sign_credential',
@@ -84,6 +87,7 @@ op_verify_credential = signature_authority.op_verify_credential
 
 op_get_contract_metadata = common.op_get_contract_metadata
 op_register_trusted_issuer = policy_agent.op_register_trusted_issuer
+op_unregister_trusted_issuer = policy_agent.op_unregister_trusted_issuer
 op_list_trusted_issuers = policy_agent.op_list_trusted_issuers
 
 cmd_register_signing_context = signature_authority.cmd_register_signing_context
@@ -91,6 +95,7 @@ cmd_list_signing_contexts = signature_authority.cmd_list_signing_contexts
 cmd_get_verifying_key = signature_authority.cmd_get_verifying_key
 cmd_verify_credential = signature_authority.cmd_verify_credential
 cmd_register_trusted_issuer = policy_agent.cmd_register_trusted_issuer
+cmd_unregister_trusted_issuer = policy_agent.cmd_unregister_trusted_issuer
 cmd_list_trusted_issuers = policy_agent.cmd_list_trusted_issuers
 
 
@@ -266,6 +271,28 @@ class cmd_bind_external_key(pcommand.contract_command_base) :
             type=str, required=True)
 
     @classmethod
+    def held_wallet_credential(cls, state, context, session, vc_map, **kwargs) :
+        """A WalletVerifyingKeyCredential the wallet already holds from a wallet key
+        authority this one trusts, or None
+
+        A wallet may hold several, and one from any other authority would be refused.
+        """
+
+        issuers = json.loads(pcontract.invoke_contract_op(
+            op_list_trusted_issuers, state, context, session, **kwargs))
+        trusted = {
+            issuer_id for issuer_id, entries in issuers.items()
+            for entry in entries
+            if WALLET_VERIFYING_KEY_CREDENTIAL_TYPE in entry['credential_types']
+        }
+        for vc in vc_map.values() :
+            credential = json.loads(base64.b64decode(vc['serializedCredential']))
+            if credential['type'][0] == WALLET_VERIFYING_KEY_CREDENTIAL_TYPE \
+               and vc['proof']['verificationMethod']['id'] in trusted :
+                return vc
+        return None
+
+    @classmethod
     def get_wallet_credential(cls, state, context, wallet_context, wallet_session, wallet_contract, **kwargs) :
         """Get a WalletVerifyingKeyCredential for the wallet and store it in the wallet
 
@@ -350,13 +377,13 @@ class cmd_bind_external_key(pcommand.contract_command_base) :
         session_key.generate_rsa_keypair(keys_dir)
         session_public_pem = session_key.load_public_pem(keys_dir)
 
-        # the binding needs a WalletVerifyingKeyCredential; reuse the one the wallet
+        # the binding needs a WalletVerifyingKeyCredential; reuse one the wallet
         # already holds, otherwise get a fresh one from the trusted authority
         vc_map = json.loads(pcontract.invoke_contract_op(
             op_get_vc_list,
             state, wallet_context, wallet_session,
             **kwargs))
-        wallet_credential = vc_map.get(WALLET_VERIFYING_KEY_CREDENTIAL_TYPE)
+        wallet_credential = cls.held_wallet_credential(state, context, session, vc_map, **kwargs)
         if wallet_credential is None :
             wallet_credential = cls.get_wallet_credential(
                 state, context,
@@ -413,6 +440,7 @@ __operations__ = [
     op_sign_credential,
     op_verify_credential,
     op_register_trusted_issuer,
+    op_unregister_trusted_issuer,
     op_list_trusted_issuers,
 ]
 
@@ -424,6 +452,7 @@ __commands__ = [
     cmd_list_signing_contexts,
     cmd_verify_credential,
     cmd_register_trusted_issuer,
+    cmd_unregister_trusted_issuer,
     cmd_list_trusted_issuers,
     cmd_create_external_key_authority,
     cmd_sign_credential,

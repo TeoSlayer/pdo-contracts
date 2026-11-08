@@ -155,6 +155,17 @@ def user_setup():
     write_var(user_wallet, "user_wallet")
 
 
+def issued_by(credential_path, authority, out_path):
+    """A copy of a credential that names its signer as issuer, which a policy
+    agent requires."""
+    with open(credential_path) as fp:
+        credential = json.load(fp)
+    credential["issuer"]["id"] = f"did:pdo:{authority}"
+    with open(out_path, "w") as fp:
+        json.dump(credential, fp)
+    return out_path
+
+
 # start interactions
 def issuer_action():
     print("Issuing public key credential...")
@@ -163,7 +174,11 @@ def issuer_action():
         read_var("key_authority"),
         issuer_user,
         path=["key"],
-        credential=public_key_credential_path,
+        credential=issued_by(
+            public_key_credential_path,
+            read_var("key_authority"),
+            os.path.join(SCRATCH_DIR, "public_key_credential.json"),
+        ),
         signed_credential=signed_public_key_credential_path,
     )
 
@@ -173,7 +188,11 @@ def issuer_action():
         read_var("membership_authority"),
         issuer_user,
         path=["membership"],
-        credential=membership_credential_path,
+        credential=issued_by(
+            membership_credential_path,
+            read_var("membership_authority"),
+            os.path.join(SCRATCH_DIR, "membership_credential.json"),
+        ),
         signed_credential=signed_membership_credential_path,
     )
 
@@ -231,6 +250,7 @@ def user_action():
         read_var("retrieved_policy_agent"),
         asset_user,
         presentation=presentation_file,
+        request={},
         issued_credential=policy_credential_path,
     )
 

@@ -73,6 +73,7 @@ contract_method_reference_t contract_method_dispatch_table[] = {
     // trusted-issuer management, inherited from policy_agent: register/list the
     // wallet_key_authority(ies) whose WalletVerifyingKeyCredentials this authority trusts
     CONTRACT_METHOD2(register_trusted_issuer, ww::identity::policy_agent::register_trusted_issuer),
+    CONTRACT_METHOD2(unregister_trusted_issuer, ww::identity::policy_agent::unregister_trusted_issuer),
     CONTRACT_METHOD2(list_trusted_issuers, ww::identity::policy_agent::list_trusted_issuers),
 
     // the customized sign_credential: bind an external session key to a wallet

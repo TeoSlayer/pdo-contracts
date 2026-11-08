@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 
 from pdo.contract import invocation_request
@@ -30,6 +31,7 @@ __all__ = [
     "op_get_rego_policy",
     "op_get_requirements",
     "op_register_trusted_issuer",
+    "op_unregister_trusted_issuer",
     "op_list_trusted_issuers",
     "op_set_policy_data",
     "op_get_policy_data",
@@ -39,6 +41,7 @@ __all__ = [
     "cmd_get_rego_policy",
     "cmd_get_requirements",
     "cmd_register_trusted_issuer",
+    "cmd_unregister_trusted_issuer",
     "cmd_list_trusted_issuers",
     "cmd_set_policy_data",
     "cmd_get_policy_data",
@@ -58,30 +61,30 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------
 op_initialize = policy_agent_plugin.op_initialize
 op_register_trusted_issuer = policy_agent_plugin.op_register_trusted_issuer
+op_unregister_trusted_issuer = policy_agent_plugin.op_unregister_trusted_issuer
 op_list_trusted_issuers = policy_agent_plugin.op_list_trusted_issuers
 op_set_policy_data = policy_agent_plugin.op_set_policy_data
 op_get_policy_data = policy_agent_plugin.op_get_policy_data
 op_get_requirements = policy_agent_plugin.op_get_requirements
-op_issue_policy_credential = policy_agent_plugin.op_issue_policy_credential
 
 cmd_register_trusted_issuer = policy_agent_plugin.cmd_register_trusted_issuer
+cmd_unregister_trusted_issuer = policy_agent_plugin.cmd_unregister_trusted_issuer
 cmd_list_trusted_issuers = policy_agent_plugin.cmd_list_trusted_issuers
 cmd_set_policy_data = policy_agent_plugin.cmd_set_policy_data
 cmd_get_policy_data = policy_agent_plugin.cmd_get_policy_data
 cmd_get_requirements = policy_agent_plugin.cmd_get_requirements
 cmd_create_rego_policy_agent = policy_agent_plugin.cmd_create_policy_agent
-cmd_issue_policy_credential = policy_agent_plugin.cmd_issue_policy_credential
 
 
 # -----------------------------------------------------------------
 # op_set_rego_policy
-#   Set (or replace) the Rego policy: a list of [subpolicy_id, source] pairs. The
-#   contract derives and stores the per-role requirements and input schema from
-#   the subpolicies. May be called any number of times; each call replaces the policy.
+#   Set the Rego policy, once: a list of [subpolicy_id, source] pairs. The
+#   contract derives and stores the per-role requirements, input schema and
+#   type of credential issued from the subpolicies.
 # -----------------------------------------------------------------
 class op_set_rego_policy(pcontract.contract_op_base):
     name = "set_rego_policy"
-    help = "set or replace the Rego policy (a list of [subpolicy_id, source] pairs)"
+    help = "set the Rego policy, once (a list of [subpolicy_id, source] pairs)"
 
     @classmethod
     def add_arguments(cls, subparser):
@@ -103,11 +106,12 @@ class op_set_rego_policy(pcontract.contract_op_base):
 
 # -----------------------------------------------------------------
 # op_get_rego_policy
-#   Fetch the whole list of [subpolicy_id, source] pairs.
+#   Fetch the policy: the credential type, the whole list of [subpolicy_id,
+#   source] pairs and the merged requirements.
 # -----------------------------------------------------------------
 class op_get_rego_policy(pcontract.contract_op_base):
     name = "get_rego_policy"
-    help = "fetch the whole list of [subpolicy_id, source] pairs"
+    help = "fetch the credential type, [subpolicy_id, source] pairs and requirements"
 
     @classmethod
     def add_arguments(cls, subparser):
@@ -123,12 +127,49 @@ class op_get_rego_policy(pcontract.contract_op_base):
 
 
 # -----------------------------------------------------------------
+# op_issue_policy_credential
+#   Judge the role-keyed presentations, with the values the requester declares,
+#   and issue the credential the policy describes.
+# -----------------------------------------------------------------
+class op_issue_policy_credential(pcontract.contract_op_base):
+    name = "issue_policy_credential"
+    help = "judge the presentations and issue the credential the policy describes"
+
+    @classmethod
+    def add_arguments(cls, subparser):
+        subparser.add_argument(
+            "-p",
+            "--presentation",
+            help="role-keyed verifiable presentations (JSON)",
+            type=pbuilder.invocation_parameter,
+            required=True,
+        )
+        subparser.add_argument(
+            "-r",
+            "--request",
+            help="values the requester declares, e.g. the project (JSON)",
+            type=pbuilder.invocation_parameter,
+            required=True,
+        )
+
+    @classmethod
+    def invoke(cls, state, session_params, presentation, request, **kwargs):
+        session_params["commit"] = True
+        message = invocation_request(
+            "issue_policy_credential", presentation=presentation, request=request
+        )
+        result = pcontract_cmd.send_to_contract(state, message, **session_params)
+        cls.log_invocation(message, result)
+        return result
+
+
+# -----------------------------------------------------------------
 # cmd_set_rego_policy
 # -----------------------------------------------------------------
 class cmd_set_rego_policy(pcommand.contract_command_base):
     # distinct from the inherited policy_agent "set_policy" (which sets policy DATA)
     name = "set_rego_policy"
-    help = "set or replace the Rego policy (a list of [subpolicy_id, source] pairs)"
+    help = "set the Rego policy, once (a list of [subpolicy_id, source] pairs)"
 
     @classmethod
     def add_arguments(cls, subparser):
@@ -173,7 +214,7 @@ class cmd_set_rego_policy(pcommand.contract_command_base):
 class cmd_get_rego_policy(pcommand.contract_command_base):
     # distinct from the inherited policy_agent "get_policy" (which gets policy DATA)
     name = "get_rego_policy"
-    help = "fetch the whole list of [subpolicy_id, source] pairs"
+    help = "fetch the credential type, [subpolicy_id, source] pairs and requirements"
 
     @classmethod
     def add_arguments(cls, subparser):
@@ -196,6 +237,64 @@ class cmd_get_rego_policy(pcommand.contract_command_base):
 
 
 # -----------------------------------------------------------------
+# cmd_issue_policy_credential
+#   The inherited policy_agent command, with the values the requester declares.
+# -----------------------------------------------------------------
+class cmd_issue_policy_credential(pcommand.contract_command_base):
+    name = "issue_credential"
+    help = "Issue a credential based on the current policy"
+
+    @classmethod
+    def add_arguments(cls, subparser):
+        subparser.add_argument(
+            "--presentation",
+            help="The name of the file where the role-keyed verifiable presentations are stored",
+            type=str,
+            required=True,
+        )
+        subparser.add_argument(
+            "--request",
+            help="values the requester declares, e.g. the project (JSON)",
+            type=pbuilder.invocation_parameter,
+            required=True,
+        )
+        subparser.add_argument(
+            "--issued-credential",
+            help="The name of the file where the issued credential will be stored",
+            type=str,
+            required=True,
+        )
+
+    @classmethod
+    def invoke(cls, state, context, presentation, request, issued_credential, **kwargs):
+        save_file = pcontract_cmd.get_contract_from_context(state, context)
+        if not save_file:
+            raise ValueError(
+                "rego policy agent contract must be created and initialized"
+            )
+
+        with open(presentation, "r") as fp:
+            presentation_data = json.load(fp)
+
+        session = pbuilder.SessionParameters(save_file=save_file)
+        issued_credential_data = pcontract.invoke_contract_op(
+            op_issue_policy_credential,
+            state,
+            context,
+            session,
+            presentation=presentation_data,
+            request=request,
+            **kwargs,
+        )
+
+        with open(issued_credential, "w") as fp:
+            fp.write(issued_credential_data)
+
+        cls.display("saved issued credential to {}".format(issued_credential))
+        return True
+
+
+# -----------------------------------------------------------------
 # Create the generic, shell independent version of the aggregate command
 # -----------------------------------------------------------------
 __operations__ = [
@@ -204,6 +303,7 @@ __operations__ = [
     op_get_rego_policy,
     op_get_requirements,
     op_register_trusted_issuer,
+    op_unregister_trusted_issuer,
     op_list_trusted_issuers,
     op_set_policy_data,
     op_get_policy_data,
@@ -220,6 +320,7 @@ __commands__ = [
     cmd_get_rego_policy,
     cmd_get_requirements,
     cmd_register_trusted_issuer,
+    cmd_unregister_trusted_issuer,
     cmd_list_trusted_issuers,
     cmd_set_policy_data,
     cmd_get_policy_data,

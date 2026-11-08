@@ -52,7 +52,7 @@ def setup_pdo_local_databases(state, bindings):
             "--replicas",
             "1",
             "--duration",
-            "60",
+            "3600",
         ],
     )
 

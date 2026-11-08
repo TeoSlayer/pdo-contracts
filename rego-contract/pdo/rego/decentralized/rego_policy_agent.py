@@ -1,5 +1,6 @@
 from pdo.rego.plugins.rego_policy_agent import (
     cmd_register_trusted_issuer,
+    cmd_unregister_trusted_issuer,
     cmd_issue_policy_credential,
     cmd_set_policy_data,
     cmd_create_rego_policy_agent,
@@ -66,6 +67,12 @@ def register_trusted_issuer(state, contract_id, issuer_contract_id, user, **cmd_
     cmd_args["issuer"] = issuer_context_path
     return _invoke_rego_policy_agent(
         state, contract_id, user, cmd_register_trusted_issuer, **cmd_args
+    )
+
+
+def unregister_trusted_issuer(state, contract_id, user, **cmd_args):
+    return _invoke_rego_policy_agent(
+        state, contract_id, user, cmd_unregister_trusted_issuer, **cmd_args
     )
 
 

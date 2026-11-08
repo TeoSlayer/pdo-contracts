@@ -36,6 +36,7 @@
 #include "identity/policy_agent.h"
 #include "identity/common/Credential.h"
 #include "identity/common/VerifyingContext.h"
+#include "identity/common/did.h"
 
 static KeyValueStore policy_metadata_store("policy_metadata_store");
 
@@ -222,6 +223,11 @@ bool ww::identity::policy_agent::verify_credential(
 {
     ERROR_IF_NOT(vc.deserialize(vc_object), "invalid request, ill-formed credential");
 
+    // Trust is looked up by the signer, so a credential whose self-declared
+    // issuer names anyone else would be trusted under a name it was not signed by
+    ERROR_IF_NOT(contract_id_of(vc.credential_.issuer_.id_) == vc.proof_.verificationMethod_.id_,
+                 "invalid request, the credential's issuer is not its signer");
+
     // Verify the credential signature
 
     // The signature was computed over the base64 encoded credential so we
@@ -398,6 +404,102 @@ bool ww::identity::policy_agent::register_trusted_issuer(const Message &msg, con
                    "unexpected error, failed to save issuer information");
 
     // ---------- RETURN ----------
+    return rsp.success(true);
+}
+
+// -----------------------------------------------------------------
+// Split an issuer's records: the revoked credential types go to withdrawn, and
+// each record that still trusts the issuer for something goes to kept.
+// -----------------------------------------------------------------
+static bool revoke_types(
+    const ww::value::Array &records,
+    const ww::value::Array &revoked,
+    ww::value::Array &kept,
+    ww::value::Array &withdrawn)
+{
+    for (size_t i = 0; i < records.get_count(); i++)
+    {
+        ww::value::Object record;
+        ww::value::Array types;
+        ERROR_IF_NOT(records.get_value(i, record) && record.get_value("credential_types", types),
+                     "unexpected error, malformed trusted issuer record");
+
+        ww::value::Array remaining;
+        for (size_t t = 0; t < types.get_count(); t++)
+        {
+            const char *type = types.get_string(t);
+            ERROR_IF_NULL(type, "unexpected error, malformed trusted issuer record");
+            ww::value::Array &into = array_contains_string(revoked, type) ? withdrawn : remaining;
+            ERROR_IF_NOT(into.append_string(type), "unexpected error, failed to rebuild types");
+        }
+
+        if (remaining.get_count() == 0)
+            continue;
+
+        ERROR_IF_NOT(record.set_value("credential_types", remaining),
+                     "unexpected error, failed to update record");
+        ERROR_IF_NOT(kept.append_value(record), "unexpected error, failed to keep record");
+    }
+    return true;
+}
+
+// -----------------------------------------------------------------
+// METHOD: unregister_trusted_issuer
+//   Withdraw trust from an issuer for the listed credential types; an issuer
+//   left trusted for nothing is removed. Owner only.
+//
+// JSON PARAMETERS:
+//   POLICY_AGENT_UNREGISTER_ISSUER_PARAM_SCHEMA
+//
+// RETURNS:
+//   true if the issuer was trusted for every listed type and no longer is
+// -----------------------------------------------------------------
+bool ww::identity::policy_agent::unregister_trusted_issuer(const Message &msg, const Environment &env, Response &rsp)
+{
+    ASSERT_SENDER_IS_OWNER(env, rsp);
+    ASSERT_INITIALIZED(rsp);
+
+    ASSERT_SUCCESS(rsp, msg.validate_schema(POLICY_AGENT_UNREGISTER_ISSUER_PARAM_SCHEMA),
+                   "invalid request, missing required parameters");
+
+    const std::string issuer_identity(msg.get_string("issuer_identity"));
+
+    ww::value::Array revoked;
+    ASSERT_SUCCESS(rsp, msg.get_value("credential_types", revoked),
+                   "invalid request, missing credential_types");
+    ASSERT_SUCCESS(rsp, revoked.get_count() > 0,
+                   "invalid request, credential_types must not be empty");
+
+    ww::value::Object trusted_issuers;
+    ASSERT_SUCCESS(rsp, get_trusted_issuers_map(trusted_issuers),
+                   "unexpected error, failed to load trusted issuers map");
+
+    ww::value::Array records;
+    ASSERT_SUCCESS(rsp, trusted_issuers.get_value(issuer_identity.c_str(), records),
+                   "invalid request, unknown trusted issuer");
+
+    ww::value::Array kept;
+    ww::value::Array withdrawn;
+    ASSERT_SUCCESS(rsp, revoke_types(records, revoked, kept, withdrawn),
+                   "unexpected error, failed to revoke credential types");
+    for (size_t i = 0; i < revoked.get_count(); i++)
+        ASSERT_SUCCESS(rsp, array_contains_string(withdrawn, revoked.get_string(i)),
+                       "invalid request, the issuer is not trusted for one of the credential types");
+
+    // the value library cannot remove a key, so an issuer left trusted for
+    // nothing is removed from the map's JSON object directly; the map is this
+    // call's own copy
+    if (kept.get_count() > 0)
+        ASSERT_SUCCESS(rsp, trusted_issuers.set_value(issuer_identity.c_str(), kept),
+                       "unexpected error, failed to update trusted issuers map");
+    else
+        ASSERT_SUCCESS(rsp, json_object_remove(json_value_get_object(const_cast<JSON_Value *>(trusted_issuers.get())),
+                                               issuer_identity.c_str()) == JSONSuccess,
+                       "unexpected error, failed to update trusted issuers map");
+
+    ASSERT_SUCCESS(rsp, save_trusted_issuers_map(trusted_issuers),
+                   "unexpected error, failed to save trusted issuers map");
+
     return rsp.success(true);
 }
 

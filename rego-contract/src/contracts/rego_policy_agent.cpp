@@ -33,7 +33,7 @@
 // policy_agent specialization hook.
 //   The inherited ww::identity::policy_agent::set_policy_data validates the
 //   incoming policy data against this schema. Policy data is opaque to this
-//   contract (it is handed straight to the Rego as input.policy_data), so the
+//   contract (each subpolicy gets its own slice as input.policy_data), so the
 //   schema is permissive. The get_claims_schemas / policy_agent_function hooks
 //   are only referenced by policy_agent methods this contract does NOT register
 //   (issue_policy_credential / get_requirements) and are dropped by the linker.
@@ -70,11 +70,11 @@ contract_method_reference_t contract_method_dispatch_table[] = {
     CONTRACT_METHOD2(describe_signing_context, ww::identity::identity::describe_signing_context),
     CONTRACT_METHOD2(list_signing_contexts, ww::identity::identity::list_signing_contexts),
 
-    // Not sure if these are appropriate for this contract
-    CONTRACT_METHOD2(sign, ww::identity::identity::sign),
+    // No sign: the agent's keys sign only the credentials its policy allows
     CONTRACT_METHOD2(verify, ww::identity::identity::verify),
 
     CONTRACT_METHOD2(register_trusted_issuer, ww::identity::policy_agent::register_trusted_issuer),
+    CONTRACT_METHOD2(unregister_trusted_issuer, ww::identity::policy_agent::unregister_trusted_issuer),
     CONTRACT_METHOD2(issue_policy_credential, ww::rego::rego_policy_agent::issue_policy_credential),
     CONTRACT_METHOD2(set_policy_data, ww::identity::policy_agent::set_policy_data),
     CONTRACT_METHOD2(get_policy_data, ww::identity::policy_agent::get_policy_data),

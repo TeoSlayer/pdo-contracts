@@ -21,10 +21,10 @@
 #   - subpolicy_a is an attribute gate: it requires a "membership" credential
 #     whose institution is on the data owner's allow list (policy data).
 #   - subpolicy_b supplies the download: it requires a "public_key" credential
-#     carrying the requester's channel key.
+#     carrying the requester's channel key, and describes the policy_decision.
 # The rego_policy_agent merges their results and issues a signed "policy_decision"
-# credential whose claims are the merged operation; the rego_token turns that
-# credential into a guardian capability that returns the encrypted data.
+# credential whose claims are the operation subpolicy_b described; the rego_token
+# turns that credential into a guardian capability that returns the encrypted data.
 # -----------------------------------------------------------------
 : "${PDO_LEDGER_URL?Missing environment variable PDO_LEDGER_URL}"
 : "${PDO_HOME?Missing environment variable PDO_HOME}"
@@ -300,13 +300,28 @@ try id_wallet create ${OPTS} --contract identity.downloader.wallet \
 yell generating user channel key
 python3 ${SCRIPTDIR}/python/generate_channel_key.py ${TEST_ROOT}/user_channel_key
 
+# A policy agent refuses a credential whose issuer is not its signer. The issuer
+# is named before the credential is signed, so the authority's contract id is
+# read off a first signature and the credential is signed again in its name.
+#   sign_as_issuer <authority context> <signing context> <credential> <signed credential>
+function sign_as_issuer() {
+    try id_signature_authority sign_credential ${OPTS} --contract $1 \
+        --path $2 --credential $3 --signed-credential ${TEST_ROOT}/probe.json
+    local signer=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["proof"]["verificationMethod"]["id"])' \
+        ${TEST_ROOT}/probe.json)
+    python3 -c 'import json,sys; c = json.load(open(sys.argv[1])); c["issuer"]["id"] = sys.argv[2]; print(json.dumps(c))' \
+        $3 "did:pdo:${signer}" > ${TEST_ROOT}/issued.json
+    try id_signature_authority sign_credential ${OPTS} --contract $1 \
+        --path $2 --credential ${TEST_ROOT}/issued.json --signed-credential $4
+}
+
 yell sign public key credential
-try id_signature_authority sign_credential ${OPTS} --contract identity.public_key_authority.signature_authority \
-    --path public_key --credential ${TEST_ROOT}/user_channel_key/credential_key.json --signed-credential ${TEST_ROOT}/public_key_vc.json
+sign_as_issuer identity.public_key_authority.signature_authority public_key \
+    ${TEST_ROOT}/user_channel_key/credential_key.json ${TEST_ROOT}/public_key_vc.json
 
 yell sign membership credential
-try id_signature_authority sign_credential ${OPTS} --contract identity.membership_authority.signature_authority \
-    --path membership --credential ${F_MEMBERSHIP_CREDENTIAL} --signed-credential ${TEST_ROOT}/membership_vc.json
+sign_as_issuer identity.membership_authority.signature_authority membership \
+    ${F_MEMBERSHIP_CREDENTIAL} ${TEST_ROOT}/membership_vc.json
 
 yell add credentials to wallet
 try id_wallet add_vc ${OPTS} --contract identity.downloader.wallet \
@@ -323,7 +338,7 @@ echo "{\"applicant\": $(cat ${TEST_ROOT}/vp.json)}" > ${TEST_ROOT}/presentation.
 
 yell issue a policy decision credential
 try rego_policy_agent issue_credential ${OPTS} --contract identity.rego_download.rego_policy_agent \
-    --presentation ${TEST_ROOT}/presentation.json --issued-credential ${TEST_ROOT}/policy_vc.json
+    --presentation ${TEST_ROOT}/presentation.json --request '{}' --issued-credential ${TEST_ROOT}/policy_vc.json
 
 yell download data
 try rego_token do_operation ${OPTS}  --contract token.test1.token_object.token_1 \

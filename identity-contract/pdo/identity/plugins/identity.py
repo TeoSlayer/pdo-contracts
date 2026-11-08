@@ -346,7 +346,7 @@ class op_verify(pcontract.contract_op_base) :
 class op_add_vc(pcontract.contract_op_base) :
 
     name = "add_vc"
-    help = "Store a verifiable credential in the identity contract, indexed by its type"
+    help = "Store a verifiable credential in the identity contract, keyed by its digest"
 
     @classmethod
     def add_arguments(cls, subparser) :
@@ -397,7 +397,7 @@ class op_get_vp(pcontract.contract_op_base) :
 class op_get_vc_list(pcontract.contract_op_base) :
 
     name = "get_vc_list"
-    help = "Retrieve all stored verifiable credentials as a type-to-VC mapping"
+    help = "Retrieve all stored verifiable credentials, keyed by digest"
 
     @classmethod
     def add_arguments(cls, subparser) :
@@ -763,7 +763,7 @@ class cmd_add_vc(pcommand.contract_command_base) :
 # -----------------------------------------------------------------
 class cmd_get_vc_list(pcommand.contract_command_base) :
     name = "get_vc_list"
-    help = "Retrieve all stored verifiable credentials as a type-to-VC mapping"
+    help = "Retrieve all stored verifiable credentials, keyed by digest"
 
     @classmethod
     def add_arguments(cls, subparser) :

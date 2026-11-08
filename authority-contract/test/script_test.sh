@@ -163,7 +163,7 @@ try wallet_key_authority create ${OPTS} --contract identity.key_authority.wallet
 
 yell export the authority issuer verifying key for its trusted-issuer registration
 try wallet_key_authority get_verifying_key ${OPTS} \
-    --contract identity.key_authority.wallet_key_authority
+    --contract identity.key_authority.wallet_key_authority --path wallet_key_authority
 
 ########### setup: the person's wallet (a plain identity contract)
 yell create the wallet to be attested
@@ -181,8 +181,10 @@ say issued credential:
 cat ${TEST_ROOT}/wallet_verifying_key_vc.json
 echo
 
-if ! grep -q "WalletVerifyingKeyCredential" ${TEST_ROOT}/wallet_verifying_key_vc.json ; then
-    die "issued credential is not a WalletVerifyingKeyCredential"
+F_TYPE=$(python3 -c 'import base64,json,sys; print(json.loads(base64.b64decode(json.load(open(sys.argv[1]))["serializedCredential"]))["type"][0])' \
+    ${TEST_ROOT}/wallet_verifying_key_vc.json)
+if [ "${F_TYPE}" != "WalletVerifyingKeyCredential" ] ; then
+    die "issued credential is not a WalletVerifyingKeyCredential: ${F_TYPE}"
 fi
 
 ########### verify the issued credential against the authority

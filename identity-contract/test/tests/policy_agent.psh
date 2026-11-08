@@ -81,7 +81,8 @@ echo signature authority chain code: ${_sa_chain_code_}
 ## =================================================================
 echo ${HEADER} create a simple signed credential ${ENDC}
 ## =================================================================
-set -s _credential1_ -f ${_path_}/../credential1.json
+## the policy agent refuses a credential whose issuer is not its signer
+set -s _credential1_ -v "{\"type\": [\"dummy\"], \"issuer\": {\"id\": \"${_sa_contract_id_}\"}, \"credentialSubject\": {\"subject\": {\"id\": \"SMeYjWc5IOdvI3KJtPbx4WHlRvkdL5A__xcHayDj9+0=\"}, \"claims\": {\"property\": \"5\"}}}"
 
 signature_authority_contract sign_credential -f ${_sa_contract_} -c ${_credential1_} \
     -p "credential" "test_credential" "test_issuer" -s _signed_credential1_

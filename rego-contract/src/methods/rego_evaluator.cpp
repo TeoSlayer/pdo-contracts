@@ -121,6 +121,88 @@ bool ww::rego::rego_evaluator::eval_rego(
 }
 
 // -----------------------------------------------------------------
+// Evaluate a rule that a Rego policy may leave out, in its own fresh engine and
+// with no input. regorus errors on evaluating a rule the policy does not declare
+// (see eval_rego), but a query for it is just undefined, so this runs a query.
+// defined is false when the rule is undefined; otherwise output_json is the JSON
+// for its value. On failure error_msg explains why.
+// -----------------------------------------------------------------
+bool ww::rego::rego_evaluator::eval_rego_query(
+    const char *source,
+    const char *query,
+    bool &defined,
+    std::string &output_json,
+    std::string &error_msg)
+{
+    RegorusEngine *engine = regorus_engine_new();
+    if (engine == nullptr)
+    {
+        error_msg.assign("unexpected error, failed to create regorus engine");
+        return false;
+    }
+
+    bool ok = true;
+    std::string results_json;
+
+    RegorusResult r = regorus_engine_add_policy(engine, "policy.rego", source);
+    if (r.status != Ok)
+    {
+        error_msg.assign(r.error_message ? r.error_message : "add_policy failed");
+        ok = false;
+    }
+    regorus_result_drop(r);
+
+    if (ok)
+    {
+        r = regorus_engine_eval_query(engine, query);
+        if (r.status != Ok || r.output == nullptr)
+        {
+            error_msg.assign(r.error_message ? r.error_message : "eval_query failed");
+            ok = false;
+        }
+        else
+        {
+            results_json.assign(r.output);
+        }
+        regorus_result_drop(r);
+    }
+
+    regorus_engine_drop(engine);
+    if (!ok)
+        return false;
+
+    // the results are {} when the query is undefined, else
+    // { "result": [ { "expressions": [ { "value": <value>, ... } ] } ] }
+    ww::value::Object results;
+    if (!results.deserialize(results_json.c_str()))
+    {
+        error_msg.assign("unexpected error, failed to parse the query results");
+        return false;
+    }
+
+    ww::value::Array result;
+    defined = results.get_value("result", result);
+    if (!defined)
+        return true;
+
+    ww::value::Object first;
+    ww::value::Array expressions;
+    ww::value::Object expression;
+    const JSON_Value *value = nullptr;
+    if (result.get_value(0, first) && first.get_value("expressions", expressions) &&
+        expressions.get_value(0, expression))
+        value = json_object_get_value(json_value_get_object(expression.get()), "value");
+
+    ww::value::Value value_out;
+    if (value == nullptr || value_out.set(value) == nullptr || !value_out.serialize(output_json))
+    {
+        error_msg.assign("unexpected error, ill-formed query results");
+        return false;
+    }
+    return true;
+}
+
+// -----------------------------------------------------------------
 // METHOD: evaluate
 //   Evaluate an arbitrary Rego policy over an arbitrary input at an arbitrary
 //   entrypoint and return the output. The contract is stateless.

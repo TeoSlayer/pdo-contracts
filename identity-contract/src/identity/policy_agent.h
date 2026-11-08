@@ -37,6 +37,12 @@
         SCHEMA_KW(chain_code, "")                       \
     "}"
 
+#define POLICY_AGENT_UNREGISTER_ISSUER_PARAM_SCHEMA     \
+    "{"                                                 \
+        SCHEMA_KW(issuer_identity, "") ","              \
+        SCHEMA_KW(credential_types, [ "" ])             \
+    "}"
+
 #define POLICY_AGENT_ISSUE_POLICY_CREDENTIAL_PARAM_SCHEMA       \
     "{"                                                          \
         SCHEMA_KWS(presentation, VERIFIABLE_PRESENTATION_SCHEMA) \
@@ -55,6 +61,7 @@ namespace policy_agent
     bool initialize_contract(const Environment& env);
     bool issue_policy_credential(const Message& msg, const Environment& env, Response& rsp);
     bool register_trusted_issuer(const Message& msg, const Environment& env, Response& rsp);
+    bool unregister_trusted_issuer(const Message& msg, const Environment& env, Response& rsp);
     bool set_policy_data(const Message& msg, const Environment& env, Response& rsp);
     bool get_policy_data(const Message& msg, const Environment& env, Response& rsp);
     bool list_trusted_issuers(const Message& msg, const Environment& env, Response& rsp);

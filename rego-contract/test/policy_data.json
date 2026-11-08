@@ -1,3 +1,6 @@
 {
-    "allowedInstitutions": ["Hyperledger", "Intel"]
+    "subpolicy_a": {
+        "allowedInstitutions": ["Hyperledger", "Intel"]
+    },
+    "subpolicy_b": {}
 }

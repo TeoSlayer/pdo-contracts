@@ -37,12 +37,14 @@ __all__ = [
     'op_verify',
     'op_verify_credential',
     'op_register_trusted_issuer',
+    'op_unregister_trusted_issuer',
     'op_issue_policy_credential',
     'op_set_policy_data',
     'op_get_policy_data',
     'op_list_trusted_issuers',
     'op_get_requirements',
     'cmd_register_trusted_issuer',
+    'cmd_unregister_trusted_issuer',
     'cmd_issue_policy_credential',
     'cmd_verify_credential',
     'cmd_register_signing_context',
@@ -133,6 +135,40 @@ class op_register_trusted_issuer(pcontract.contract_op_base) :
         }
 
         message = invocation_request('register_trusted_issuer', **params)
+        result = pcontract_cmd.send_to_contract(state, message, **session_params)
+        cls.log_invocation(message, result)
+
+        return result
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+class op_unregister_trusted_issuer(pcontract.contract_op_base) :
+
+    name = "unregister_trusted_issuer"
+    help = "withdraw trust from an issuer for some credential types"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        subparser.add_argument(
+            '-i', '--issuer',
+            help='The issuer to unregister (issuer contract identifier)',
+            type=str,
+            required=True)
+
+        subparser.add_argument(
+            "-t",
+            "--credential-types",
+            help="Credential types to withdraw",
+            type=str,
+            nargs='+',
+            required=True)
+
+    @classmethod
+    def invoke(cls, state, session_params, issuer, credential_types, **kwargs) :
+        session_params['commit'] = True
+
+        message = invocation_request(
+            'unregister_trusted_issuer', issuer_identity=issuer, credential_types=credential_types)
         result = pcontract_cmd.send_to_contract(state, message, **session_params)
         cls.log_invocation(message, result)
 
@@ -322,6 +358,45 @@ class cmd_register_trusted_issuer(pcommand.contract_command_base) :
             **kwargs)
 
         cls.display('registered trusted issuer {}'.format(issuer))
+        return True
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+class cmd_unregister_trusted_issuer(pcommand.contract_command_base) :
+    name = "unregister"
+    help = "Withdraw trust from an issuer for some credential types"
+
+    @classmethod
+    def add_arguments(cls, subparser) :
+        subparser.add_argument(
+            '-i', '--issuer',
+            help='The contract identifier of the issuer to unregister',
+            type=str,
+            required=True)
+
+        subparser.add_argument(
+            "-t",
+            "--credential-types",
+            help="Credential types to withdraw",
+            type=str,
+            nargs='+',
+            required=True)
+
+    @classmethod
+    def invoke(cls, state, context, issuer, credential_types, **kwargs) :
+        save_file = pcontract_cmd.get_contract_from_context(state, context)
+        if not save_file :
+            raise ValueError('policy agent contract must be created and initialized')
+
+        session = pbuilder.SessionParameters(save_file=save_file)
+        pcontract.invoke_contract_op(
+            op_unregister_trusted_issuer,
+            state, context, session,
+            issuer=issuer,
+            credential_types=credential_types,
+            **kwargs)
+
+        cls.display('unregistered trusted issuer {}'.format(issuer))
         return True
 
 # -----------------------------------------------------------------
@@ -537,6 +612,7 @@ __operations__ = [
     op_verify,
     op_verify_credential,
     op_register_trusted_issuer,
+    op_unregister_trusted_issuer,
     op_issue_policy_credential,
     op_set_policy_data,
     op_get_policy_data,
@@ -552,6 +628,7 @@ __commands__ = [
     cmd_list_signing_contexts,
     cmd_verify_credential,
     cmd_register_trusted_issuer,
+    cmd_unregister_trusted_issuer,
     cmd_issue_policy_credential,
     cmd_create_policy_agent,
     cmd_set_policy_data,

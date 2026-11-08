@@ -24,9 +24,9 @@
 
 // The rego_evaluator contract has a single responsibility: evaluate an arbitrary
 // Rego policy over an arbitrary input at an arbitrary entrypoint and return the
-// output. It is stateless. Its eval_rego helper (and the regorus custom
-// allocator hooks) live in methods/rego_evaluator.cpp and are reused by
-// rego_policy_agent.
+// output. It is stateless. Its eval_rego and eval_rego_query helpers (and the
+// regorus custom allocator hooks) live in methods/rego_evaluator.cpp and are
+// reused by rego_policy_agent.
 
 // evaluate: { "rego_source": <rego>, "entrypoint": <data.x.y>, "input": <json> }
 // rego_source / input are passed as strings (input is arbitrary JSON text).
@@ -51,6 +51,17 @@ namespace rego_evaluator
         const char* source,
         const char* entrypoint,
         const std::string& input_json,
+        std::string& output_json,
+        std::string& error_msg);
+
+    // Evaluate a rule that a Rego policy may leave out, as a query, in its own
+    // fresh engine and with no input. defined is false when the rule is
+    // undefined; otherwise output_json is the JSON for its value. Reused by
+    // rego_policy_agent. On failure error_msg explains why.
+    bool eval_rego_query(
+        const char* source,
+        const char* query,
+        bool& defined,
         std::string& output_json,
         std::string& error_msg);
 

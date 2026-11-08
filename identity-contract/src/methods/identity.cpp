@@ -44,6 +44,9 @@ static const std::string initial_holder_path("__HOLDER__");
 
 // -----------------------------------------------------------------
 // VC STORE HELPERS
+//   The store maps each credential's digest to the credential, so a wallet
+//   holds any number of credentials of one type, and adding a credential can
+//   never replace one that is already there.
 // -----------------------------------------------------------------
 static bool load_vc_map(ww::value::Object& vc_map)
 {
@@ -65,15 +68,54 @@ static bool save_vc_map(ww::value::Object& vc_map)
     return true;
 }
 
-static bool store_vc(const std::string& credential_type, ww::value::Object& vc_object)
+static bool credential_digest(const ww::identity::VerifiableCredential& vc, std::string& digest)
+{
+    const std::string serialized(vc.get_serialized_credential());
+    ww::types::ByteArray bytes(serialized.begin(), serialized.end());
+    ww::types::ByteArray hash;
+    ERROR_IF_NOT(ww::crypto::hash::sha256_hash(bytes, hash),
+                 "unexpected error, failed to hash the credential");
+    ERROR_IF_NOT(ww::crypto::b64_encode(hash, digest),
+                 "unexpected error, failed to encode the credential digest");
+    return true;
+}
+
+static bool store_vc(const std::string& digest, ww::value::Object& vc_object)
 {
     ww::value::Object vc_map;
     ERROR_IF_NOT(load_vc_map(vc_map),
                  "unexpected error, failed to load vc map");
-    ERROR_IF_NOT(vc_map.set_value(credential_type.c_str(), vc_object),
+    ERROR_IF_NOT(vc_map.set_value(digest.c_str(), vc_object),
                  "unexpected error, failed to update vc map");
     ERROR_IF_NOT(save_vc_map(vc_map),
                  "unexpected error, failed to save vc map");
+    return true;
+}
+
+// Append every stored credential of credential_type to vc_list, counting them
+// in selected.
+static bool select_vcs(
+    const ww::value::Object& vc_map,
+    const std::string& credential_type,
+    ww::value::Array& vc_list,
+    size_t& selected)
+{
+    const JSON_Object *store = json_value_get_object(vc_map.get());
+    ERROR_IF_NULL(store, "unexpected error, malformed vc store");
+
+    for (size_t i = 0; i < json_object_get_count(store); i++)
+    {
+        ww::value::Object vc_object;
+        ww::identity::VerifiableCredential vc;
+        vc_object.set(json_object_get_value_at(store, i));
+        ERROR_IF_NOT(vc.deserialize(vc_object) && ! vc.credential_.type_.empty(),
+                     "unexpected error, malformed credential in the vc store");
+        if (vc.credential_.type_[0] != credential_type)
+            continue;
+        ERROR_IF_NOT(vc_list.append_value(vc_object),
+                     "unexpected error, failed to build VC list");
+        selected++;
+    }
     return true;
 }
 
@@ -559,8 +601,8 @@ bool ww::identity::identity::get_extended_verifying_key(const Message& msg, cons
 
 // -----------------------------------------------------------------
 // METHOD: add_vc
-//   Store a verifiable credential in the identity's VC store,
-//   indexed by the first element of its type list.
+//   Store a verifiable credential in the identity's VC store, keyed by its
+//   digest. Storing the same credential twice keeps one copy.
 //
 // JSON PARAMETERS:
 //   IDENTITY_ADD_VC_PARAM_SCHEMA
@@ -587,13 +629,15 @@ bool ww::identity::identity::add_vc(const Message& msg, const Environment& env, 
     ASSERT_SUCCESS(rsp, !vc.credential_.type_.empty(),
                    "invalid request, credential type list is empty");
 
-    const std::string credential_type = vc.credential_.type_[0];
+    std::string digest;
+    ASSERT_SUCCESS(rsp, credential_digest(vc, digest),
+                   "unexpected error, failed to compute the credential digest");
 
     ww::value::Object serialized_vc;
     ASSERT_SUCCESS(rsp, vc.serialize(serialized_vc),
                    "unexpected error, failed to serialize credential");
 
-    ASSERT_SUCCESS(rsp, store_vc(credential_type, serialized_vc),
+    ASSERT_SUCCESS(rsp, store_vc(digest, serialized_vc),
                    "unexpected error, failed to store credential");
 
     return rsp.success(true);
@@ -601,13 +645,12 @@ bool ww::identity::identity::add_vc(const Message& msg, const Environment& env, 
 
 // -----------------------------------------------------------------
 // METHOD: get_vc_list
-//   Return all stored verifiable credentials as a dictionary mapping
-//   credential type to the VC object.
+//   Return all stored verifiable credentials, keyed by digest.
 //
 // JSON PARAMETERS:
 //   none
 // RETURNS:
-//   object mapping credential_type -> VC object
+//   object mapping credential digest -> VC object
 // -----------------------------------------------------------------
 bool ww::identity::identity::get_vc_list(const Message& msg, const Environment& env, Response& rsp)
 {
@@ -654,12 +697,11 @@ bool ww::identity::identity::get_vp(const Message& msg, const Environment& env, 
     {
         const std::string credential_type(types_array.get_string(i));
 
-        ww::value::Object vc_object;
-        ASSERT_SUCCESS(rsp, vc_map.get_value(credential_type.c_str(), vc_object),
+        size_t selected = 0;
+        ASSERT_SUCCESS(rsp, select_vcs(vc_map, credential_type, vc_list, selected),
+                       "unexpected error, failed to read the vc store");
+        ASSERT_SUCCESS(rsp, selected > 0,
                        ("invalid request, no credential stored for type: " + credential_type).c_str());
-
-        ASSERT_SUCCESS(rsp, vc_list.append_value(vc_object),
-                       "unexpected error, failed to build VC list");
     }
 
     // build the Presentation object

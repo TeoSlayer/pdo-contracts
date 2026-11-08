@@ -125,6 +125,7 @@ contract_method_reference_t contract_method_dispatch_table[] = {
     CONTRACT_METHOD2(verify, ww::identity::identity::verify),
 
     CONTRACT_METHOD2(register_trusted_issuer, ww::identity::policy_agent::register_trusted_issuer),
+    CONTRACT_METHOD2(unregister_trusted_issuer, ww::identity::policy_agent::unregister_trusted_issuer),
     CONTRACT_METHOD2(issue_policy_credential, ww::identity::policy_agent::issue_policy_credential),
     CONTRACT_METHOD2(set_policy_data, ww::identity::policy_agent::set_policy_data),
     CONTRACT_METHOD2(get_policy_data, ww::identity::policy_agent::get_policy_data),

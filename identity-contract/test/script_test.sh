@@ -151,6 +151,9 @@ try pdo-context load ${OPTS} --import-file ${F_CONTEXT_TEMPLATES}/identity.toml 
 try pdo-context load ${OPTS} --import-file ${F_CONTEXT_TEMPLATES}/identity.toml \
     --bind identity idtest2 --bind user user1
 
+try pdo-context load ${OPTS} --import-file ${F_CONTEXT_TEMPLATES}/identity.toml \
+    --bind identity idtest3 --bind user user1
+
 try pdo-context load ${OPTS} --import-file ${F_CONTEXT_TEMPLATES}/signature_authority.toml \
     --bind identity satest --bind user user2
 
@@ -247,12 +250,36 @@ say $(< ${TEST_ROOT}/sa_credential2.json)
 try id_signature_authority verify_credential ${OPTS} --contract identity.satest.signature_authority \
     --signed-credential ${TEST_ROOT}/sa_credential2.json
 
+# A policy agent refuses a credential whose issuer is not its signer, so the
+# credentials it judges below name the signature authority as their issuer.
+yell sign credentials whose issuer is the signature authority
+SA_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["proof"]["verificationMethod"]["id"])' \
+    ${TEST_ROOT}/sa_credential1.json)
+for n in 1 2 ; do
+    python3 -c 'import json,sys; c = json.load(open(sys.argv[1])); c["issuer"]["id"] = sys.argv[2]; print(json.dumps(c))' \
+        ${SCRIPTDIR}/credential${n}.json ${SA_ID} > ${TEST_ROOT}/credential${n}.json
+done
+mv ${TEST_ROOT}/sa_credential1.json ${TEST_ROOT}/foreign_credential1.json
+try id_signature_authority sign_credential ${OPTS} --contract identity.satest.signature_authority \
+    --path satest ext1 --credential ${TEST_ROOT}/credential1.json --signed-credential ${TEST_ROOT}/sa_credential1.json
+try id_signature_authority sign_credential ${OPTS} --contract identity.satest.signature_authority \
+    --path satest ext1 ext2 --credential ${TEST_ROOT}/credential2.json --signed-credential ${TEST_ROOT}/sa_credential2.json
+
 yell add VCs to the identity contracts
 try id_wallet add_vc ${OPTS} --contract identity.idtest.wallet \
     --credential ${TEST_ROOT}/sa_credential1.json
 
 try id_wallet add_vc ${OPTS} --contract identity.idtest2.wallet \
     --credential ${TEST_ROOT}/sa_credential2.json
+
+yell adding the same credential twice keeps one copy
+try id_wallet add_vc ${OPTS} --contract identity.idtest2.wallet \
+    --credential ${TEST_ROOT}/sa_credential2.json
+try id_wallet get_vc_list ${OPTS} --contract identity.idtest2.wallet --file ${TEST_ROOT}/vc_list2.json
+F_COUNT=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' ${TEST_ROOT}/vc_list2.json)
+if [ "${F_COUNT}" != "1" ] ; then
+    die "expected one stored credential, found ${F_COUNT}"
+fi
 
 # =================================================================
 yell create a policy agent
@@ -291,6 +318,18 @@ try id_credential extract --signed-credential ${TEST_ROOT}/pa_credential2.json
 
 try id_policy_agent verify_credential ${OPTS} --contract identity.patest.policy_agent \
     --signed-credential ${TEST_ROOT}/pa_credential2.json
+
+yell a credential naming someone else as its issuer is refused, this should fail
+try id_wallet create ${OPTS} --contract identity.idtest3.wallet -d 'idtest3 identity'
+try id_wallet add_vc ${OPTS} --contract identity.idtest3.wallet \
+    --credential ${TEST_ROOT}/foreign_credential1.json
+try id_wallet get_vp ${OPTS} --contract identity.idtest3.wallet \
+    --types dummy --file ${TEST_ROOT}/vp3.json
+id_policy_agent issue_credential ${OPTS} --contract identity.patest.policy_agent --abridged \
+    --presentation ${TEST_ROOT}/vp3.json --issued-credential ${TEST_ROOT}/pa_credential3.json
+if [ $? == 0 ]; then
+    die a credential whose issuer is not its signer should have been refused
+fi
 
 yell test policy agent public info endpoints
 say policy data:

@@ -59,30 +59,51 @@ result := {
 //                                "verification_tasks": [ { "index": n }, ... ],
 //                                "vc_supplied_verification_tasks":
 //                                    [ { "index": n, "key": <pem>, "key_type": "ec"|"rsa" }, ... ],
-//                                "operation": { "name": ..., "parameters": {...} } }, ... ] }
-//   output (data.combine.result):
-//           { "decision": bool,                    # true only if every subpolicy allowed
+//                                "credential": { "subject": ..., "claims": {...} } }, ... ] }
+//           (credential only from the one subpolicy that describes it)
+//   output (data.combine.result), on allow:
+//           { "decision": true,                    # every subpolicy allowed, one described the credential
 //             "verification_tasks": [ ... ],       # trusted-issuer tasks, deduplicated
 //             "vc_supplied_verification_tasks": [ ... ],  # supplied-key tasks, deduplicated
-//             "operation": { ... } }                # all operations merged
+//             "credential": { ... } }               # the credential to issue
+//   or, on deny:
+//           { "decision": false, "reason": <why the policy denied> }
 static const char REGO_RESULTS_COMBINATOR[] = R"REGO(
 package combine
 
 import rego.v1
 
-# the policy allows only if every subpolicy allowed
-default decision := false
-decision if {
+# every subpolicy allowed
+all_allowed if {
     every o in input.subpolicy_outputs {
         o.decision == true
     }
+}
+
+# the credentials the subpolicies describe
+credentials := [o.credential | some o in input.subpolicy_outputs; o.credential]
+
+# the policy allows only if every subpolicy allowed and exactly one described
+# the credential to issue
+default decision := false
+decision if {
+    all_allowed
+    count(credentials) == 1
+}
+
+reason := "a module denied the request" if {
+    not all_allowed
+} else := "no module describes the credential" if {
+    count(credentials) == 0
+} else := "more than one module describes the credential" if {
+    count(credentials) > 1
 }
 
 # every distinct trusted-issuer task any subpolicy flagged. The whole task is
 # kept; sets deduplicate identical tasks structurally.
 task_set := {task |
     some o in input.subpolicy_outputs
-    some task in object.get(o, "verification_tasks", [])
+    some task in o.verification_tasks
 }
 
 verification_tasks := [task | some task in task_set]
@@ -91,21 +112,17 @@ verification_tasks := [task | some task in task_set]
 # key and key_type).
 vc_supplied_task_set := {task |
     some o in input.subpolicy_outputs
-    some task in object.get(o, "vc_supplied_verification_tasks", [])
+    some task in o.vc_supplied_verification_tasks
 }
 
 vc_supplied_verification_tasks := [task | some task in vc_supplied_task_set]
 
-# merge every subpolicy's operation into a single object
-operation := object.union_n([op |
-    some o in input.subpolicy_outputs
-    op := object.get(o, "operation", {})
-])
-
 result := {
-    "decision": decision,
+    "decision": true,
     "verification_tasks": verification_tasks,
     "vc_supplied_verification_tasks": vc_supplied_verification_tasks,
-    "operation": operation,
-}
+    "credential": credentials[0],
+} if decision
+
+result := {"decision": false, "reason": reason} if not decision
 )REGO";

@@ -203,4 +203,18 @@ try external_key_authority bind_external_key ${OPTS} --identity user2 \
     --wallet identity.wallet.wallet \
     --keys-dir ${TEST_ROOT}/keys2
 
+# a wallet keeps several credentials of a type, so the second binding adds a key
+# credential beside the first instead of replacing it
+yell the wallet holds one verifying-key credential and both public-key credentials
+try id_wallet get_vc_list ${OPTS} --identity user2 --contract identity.wallet.wallet \
+    --file ${TEST_ROOT}/vc_list.json
+F_TYPES=$(python3 -c '
+import base64, json, sys
+vcs = json.load(open(sys.argv[1])).values()
+print(",".join(sorted(json.loads(base64.b64decode(vc["serializedCredential"]))["type"][0] for vc in vcs)))
+' ${TEST_ROOT}/vc_list.json)
+if [ "${F_TYPES}" != "WalletVerifyingKeyCredential,publicKeyCredential,publicKeyCredential" ] ; then
+    die "unexpected credentials after two bindings: ${F_TYPES}"
+fi
+
 yell All tests passed
