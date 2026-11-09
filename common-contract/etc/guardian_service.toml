@@ -61,6 +61,10 @@ CapabilityKeyStore = "${data}/keystore.db"
 # --------------------------------------------------
 # TokenIssuer -- configuration for TI verification
 # --------------------------------------------------
+# Registration is disabled until BOTH a trusted ledger public key (PEM,
+# not a filename) and a nonempty contract allowlist are configured.
+# CodeHash optionally restricts the pre-nonce contract code hash as well.
+# Existing registrations cannot be replaced with different keys through this API.
 [TokenIssuer]
 LedgerKey = ""
 CodeHash = ""

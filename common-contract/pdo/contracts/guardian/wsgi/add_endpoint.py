@@ -20,10 +20,10 @@ handling contract method invocation requests.
 """
 
 from http import HTTPStatus
-import io
 import json
 
 from pdo.contracts.guardian.common.utility import ValidateJSON
+from pdo.contracts.guardian.common.attestation import verify_endpoint_attestation
 from pdo.common.wsgi import ErrorResponse, UnpackJSONRequest
 
 import logging
@@ -35,11 +35,14 @@ class AddEndpointApp(object) :
 
     __input_schema__ = {
         "type" : "object",
+        "required": ["contract_id", "ledger_attestation", "contract_metadata", "contract_code_metadata"],
         "properties" : {
             "contract_id" : {"type" : "string"},
             "ledger_attestation" : {
                 "type" : "object",
+                "required": ["pdo_contract_creator_pem_key", "contract_code_hash", "metadata_hash", "signature"],
                 "properties": {
+                    "pdo_contract_creator_pem_key": {"type": "string", "minLength": 1},
                     "contract_code_hash": {"type" : "string"},
                     "metadata_hash": {"type" : "string"},
                     "signature": {"type" : "string"},
@@ -47,6 +50,7 @@ class AddEndpointApp(object) :
             },
             "contract_metadata" : {
                 "type" : "object",
+                "required": ["verifying_key", "encryption_key"],
                 "properties": {
                     "verifying_key" : {"type" : "string"},
                     "encryption_key" : {"type" : "string"},
@@ -54,6 +58,7 @@ class AddEndpointApp(object) :
             },
             "contract_code_metadata" : {
                 "type" : "object",
+                "required": ["code_hash", "code_nonce"],
                 "properties" : {
                     "code_hash": {"type" : "string"},
                     "code_nonce": {"type" : "string"},
@@ -89,19 +94,22 @@ class AddEndpointApp(object) :
             logger.error("unknown exception unpacking request (Invoke); %s", str(e))
             return ErrorResponse(start_response, "unknown exception while unpacking request")
 
-        # verify the endpoint information
-        ## <TBD> ##
-
-        ## what is the policy for allowing an endpoint to be registered?
-        if self.code_hash and contract_code_metadata["code_hash"] != self.code_hash :
+        # Registration is disabled until the operator supplies a trust anchor
+        # and an explicit list of permitted contracts.
+        if not self.ledger_key or not self.contractIDs or contract_id not in self.contractIDs:
             return ErrorResponse(start_response, 'endpoint not authorized')
-        if self.contractIDs and contract_id not in self.contractIDs :
+        if self.code_hash and contract_code_metadata["code_hash"] != self.code_hash:
             return ErrorResponse(start_response, 'endpoint not authorized')
 
-        # add the endpoint to the endpoint registry
-        verifying_key = contract_metadata['verifying_key']
-        encryption_key = contract_metadata['encryption_key']
-        self.endpoint_registry.set_endpoint(contract_id, verifying_key, encryption_key)
+        try:
+            from pdo.common import crypto
+            verify_endpoint_attestation(request, crypto.SIG_PublicKey(self.ledger_key))
+            self.endpoint_registry.set_endpoint(
+                contract_id, contract_metadata['verifying_key'], contract_metadata['encryption_key']
+            )
+        except Exception:
+            logger.warning('endpoint registration rejected')
+            return ErrorResponse(start_response, 'endpoint attestation or registration rejected')
 
         # return success
         result = json.dumps({'success' : True}).encode()

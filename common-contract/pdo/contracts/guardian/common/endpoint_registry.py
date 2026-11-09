@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import shelve
+import threading
 
 from pdo.common.keys import EnclaveKeys
 
@@ -26,19 +27,31 @@ class EndpointRegistry(object) :
     # -------------------------------------------------------
     def __init__(self, filename = "endpoint.db") :
         logger.info('create endpoint registry in file %s', filename)
+        self._lock = threading.RLock()
         self._registry = shelve.open(filename, flag='c', writeback=True)
 
     # -------------------------------------------------------
     def close(self) :
-        self._registry.close()
-        self._registry = None
+        with self._lock:
+            self._registry.close()
+            self._registry = None
 
     # -------------------------------------------------------
     def get_endpoint(self, contract_id) :
-        (verifying_key, encryption_key) = self._registry[contract_id]
+        with self._lock:
+            (verifying_key, encryption_key) = self._registry[contract_id]
         return EnclaveKeys(verifying_key, encryption_key)
 
     # -------------------------------------------------------
     def set_endpoint(self, contract_id, verifying_key, encryption_key) :
-        self._registry[contract_id] = (verifying_key, encryption_key)
-        return EnclaveKeys(verifying_key, encryption_key)
+        # Parse both public keys before changing persistent state.
+        keys = EnclaveKeys(verifying_key, encryption_key)
+        endpoint = (verifying_key, encryption_key)
+        with self._lock:
+            if contract_id in self._registry:
+                if self._registry[contract_id] != endpoint:
+                    raise ValueError('endpoint already registered with different keys')
+            else:
+                self._registry[contract_id] = endpoint
+                self._registry.sync()
+        return keys
