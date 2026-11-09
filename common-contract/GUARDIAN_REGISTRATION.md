@@ -8,7 +8,11 @@ restricts the pre-nonce contract code hash in addition to the allowlist.
 
 The request includes the unmodified `get_contract_info` response as
 `ledger_attestation`, including `pdo_contract_creator_pem_key`. Its signature binds
-contract ID, creator PEM, ledger code hash, and ledger metadata hash in that order.
+contract ID, creator PEM, ledger code hash, and ledger metadata hash, followed by
+base64-encoded SHA-256 digests of `contract_family` and the serialized `storage_policy`.
+Both fields must be carried unchanged from the ledger response; do not parse and
+reserialize the storage policy before verifying. This matches the pinned PDO
+revision `6c07f678d1a13fef0302926b788e1d1f750a4c93`.
 Code metadata is checked against the nonce-bound code hash. Endpoint public keys
 are checked against the ledger metadata hash, which also binds the contract ID.
 See the PDO ledger client's `get_contract_info` verification and the contract

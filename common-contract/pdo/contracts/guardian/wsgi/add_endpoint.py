@@ -40,12 +40,17 @@ class AddEndpointApp(object) :
             "contract_id" : {"type" : "string"},
             "ledger_attestation" : {
                 "type" : "object",
-                "required": ["pdo_contract_creator_pem_key", "contract_code_hash", "metadata_hash", "signature"],
+                "required": [
+                    "pdo_contract_creator_pem_key", "contract_code_hash", "metadata_hash",
+                    "contract_family", "storage_policy", "signature",
+                ],
                 "properties": {
                     "pdo_contract_creator_pem_key": {"type": "string", "minLength": 1},
                     "contract_code_hash": {"type" : "string"},
                     "metadata_hash": {"type" : "string"},
                     "signature": {"type" : "string"},
+                    "contract_family": {"type": "string"},
+                    "storage_policy": {"type": "string"},
                 },
             },
             "contract_metadata" : {

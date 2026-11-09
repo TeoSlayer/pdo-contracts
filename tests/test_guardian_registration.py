@@ -76,6 +76,8 @@ class RegistrationTests(unittest.TestCase):
         code = self.request['contract_code_metadata']
         self.request['ledger_attestation'] = {
             'pdo_contract_creator_pem_key': pem(self.ledger.public_key()),
+            'contract_family': 'example.family',
+            'storage_policy': '{"max_retention":30}',
             'contract_code_hash': b64(hashlib.sha256(
                 base64.b64decode(code['code_hash']) + hashlib.sha256(code['code_nonce'].encode()).digest()
             ).digest()),
@@ -84,7 +86,12 @@ class RegistrationTests(unittest.TestCase):
             ).digest()),
         }
         a = self.request['ledger_attestation']
-        message = (self.request['contract_id'] + a['pdo_contract_creator_pem_key'] + a['contract_code_hash'] + a['metadata_hash']).encode()
+        # Protocol vector for the repository's pinned PDO revision 6c07f678:
+        # get_contract_info appends b64(SHA256(family)) and b64(SHA256(policy)).
+        # Keep the expected digest bytes independent of the implementation under test.
+        suffix = 'KK5p2/AIvXtT/cMD+EO/oOHU9FJerihycf0GVXdBGRM=DiQW4WmzFBKTbvCxQUTaF0JSOfniuyN2YhOKsEZtXwo='
+        message = (self.request['contract_id'] + a['pdo_contract_creator_pem_key']
+                   + a['contract_code_hash'] + a['metadata_hash'] + suffix).encode()
         a['signature'] = b64(self.ledger.sign(message, ec.ECDSA(hashes.SHA256())))
         self.key = LedgerKey(pem(self.ledger.public_key()))
 
@@ -95,7 +102,8 @@ class RegistrationTests(unittest.TestCase):
         fields = (
             ('contract_id',), ('ledger_attestation', 'pdo_contract_creator_pem_key'),
             ('ledger_attestation', 'contract_code_hash'), ('ledger_attestation', 'metadata_hash'),
-            ('ledger_attestation', 'signature'), ('contract_metadata', 'verifying_key'),
+            ('ledger_attestation', 'signature'), ('ledger_attestation', 'contract_family'),
+            ('ledger_attestation', 'storage_policy'), ('contract_metadata', 'verifying_key'),
             ('contract_metadata', 'encryption_key'), ('contract_code_metadata', 'code_hash'),
             ('contract_code_metadata', 'code_nonce'),
         )
@@ -106,6 +114,15 @@ class RegistrationTests(unittest.TestCase):
                 target[path[-1]] += 'tampered'
                 with self.assertRaises((ValueError, TypeError)):
                     attestation.verify_endpoint_attestation(request, self.key)
+
+    def test_family_policy_boundaries_cannot_shift(self):
+        # Same concatenated text, different fields: their separate digests must bind.
+        request = copy.deepcopy(self.request)
+        info = request['ledger_attestation']
+        info['contract_family'] = 'example.famil'
+        info['storage_policy'] = 'y' + info['storage_policy']
+        with self.assertRaises(ValueError):
+            attestation.verify_endpoint_attestation(request, self.key)
 
     def test_signature_failure_codes_fail_closed(self):
         for result in (0, -1):
@@ -142,9 +159,10 @@ class RegistrationTests(unittest.TestCase):
                 self.assertEqual(handler.AddEndpointApp(config, None, registry)(self.request, Mock()), ['rejected'])
                 registry.set_endpoint.assert_not_called()
             app = handler.AddEndpointApp(valid_config, None, registry)
-            incomplete = copy.deepcopy(self.request)
-            del incomplete['ledger_attestation']['signature']
-            self.assertEqual(app(incomplete, Mock()), ['rejected'])
+            for field in ('signature', 'contract_family', 'storage_policy'):
+                incomplete = copy.deepcopy(self.request)
+                del incomplete['ledger_attestation'][field]
+                self.assertEqual(app(incomplete, Mock()), ['rejected'])
             modified = copy.deepcopy(self.request)
             modified['contract_metadata']['encryption_key'] = self.verifying_key
             self.assertEqual(app(modified, Mock()), ['rejected'])

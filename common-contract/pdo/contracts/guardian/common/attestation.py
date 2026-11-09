@@ -4,11 +4,17 @@ import hashlib
 import hmac
 
 
+def _hash_field(value):
+    """Match the PDO ledger's base64-encoded SHA-256 field digest."""
+    return base64.b64encode(hashlib.sha256(value.encode("utf-8")).digest()).decode("ascii")
+
+
 def verify_endpoint_attestation(request, ledger_key):
     """Raise ValueError unless the ledger authenticates every supplied endpoint field.
 
     The signed bytes follow PDO's CCF get_contract_info protocol, including the
-    contract ID and creator PEM. Hashing follows contract::attestation::add_endpoint.
+    contract ID, creator PEM, and digests of family and serialized storage policy.
+    Hashing follows contract::attestation::add_endpoint in the pinned PDO dependency.
     ledger_key is a PDO SIG_PublicKey (VerifySignature returns 1 on success).
     """
     contract_id = request["contract_id"]
@@ -18,6 +24,8 @@ def verify_endpoint_attestation(request, ledger_key):
     message = (
         contract_id + attestation["pdo_contract_creator_pem_key"]
         + attestation["contract_code_hash"] + attestation["metadata_hash"]
+        + _hash_field(attestation["contract_family"])
+        + _hash_field(attestation["storage_policy"])
     ).encode("utf-8")
     signature = base64.b64decode(attestation["signature"], validate=True)
     if ledger_key.VerifySignature(message, signature) != 1:
